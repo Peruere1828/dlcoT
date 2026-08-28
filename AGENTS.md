@@ -8,11 +8,13 @@ This is a **hardware/FPGA lab course** (数字逻辑与计算机组成), not a s
 - Install & project paths must contain **no Chinese characters**. Vivado quietly breaks on them.
 
 ## Reading the lab PDFs
-All PDFs are readable with `pypdf` (already installed). Dump a PDF to text:
+The lab PDFs are **not suitable for the assistant to read directly**: Chinese glyphs come out garbled (e.g. 选择器 → 㫍㵗㋹), so do NOT rely on pypdf extraction for requirements. The **user reads the PDF and relays the requirements in Chinese** — treat the user's relayed text as the authoritative spec for each lab.
+
+If you still need a dump (e.g. for English figures/code/tables):
 ```bash
 python3 -c "from pypdf import PdfReader; r=PdfReader('lab00/lab00.pdf'); print('\n'.join((p.extract_text() or '') for p in r.pages))"
 ```
-Caveat: some Chinese glyphs come out garbled in extraction. The readable Chinese guide is `lab00/实验问题指导.md` — prefer it over the PDFs for narrative/per-lab gotchas.
+Caveat: Chinese glyphs garble; trust only the readable parts (code, tables, English). The readable Chinese guide is `lab00/实验问题指导.md` — prefer it over the PDFs for narrative/per-lab gotchas.
 
 ## Vivado flow order (do not skip steps)
 Design (RTL) → add constraints (XDC pin map) → **Run Behavioral Simulation** → Synthesize → Implementation → Generate Bitstream → Program Device (Hardware Manager).
@@ -24,11 +26,22 @@ Design (RTL) → add constraints (XDC pin map) → **Run Behavioral Simulation**
 2. **Only after OJ passes**, write the **constraint (XDC) file** from `ref.xdc` (repo-root pin map, do not modify it; copy pins from there). Then the user flashes the board.
 3. **After board test passes**, write the **lab report**.
 
+### Board top module MUST be self-contained (single file)
+The user evaluates by **completely clearing the Vivado project, adding ONLY the assistant's `.v` file(s) + `.xdc`, then compile + flash** — nothing else. So the board top must:
+- Be **one standalone module in one `.v` file** — all submodules (decoder, mux, encoder, …) inlined or in the same file, **zero dependency on any other file** (no separate OJ module needed for board builds).
+- Match the XDC port names exactly (that `.v` + `.xdc` pair must build and flash alone).
+- If the OJ module and the board top differ, keep them as **separate files**: the OJ design file stays as-is for OJ submission; the board gets its own self-contained top file.
+
+## User evaluation flow (for guiding the user)
+1. User clears all previous project content, adds the assistant's code files + XDC, sets top module, runs synthesis → implementation → generate bitstream → program board.
+2. Board behavior is checked against the lab manual; mismatches (e.g. wrong switch mapping) usually mean the XDC didn't match the manual or wasn't re-flashed.
+3. OJ and board are separate checks — passing one does not mean the other passes.
+
 ## CRITICAL hardware rule
 Pin assignment in the XDC file **must match the Nexys A7-100T pinout** (SW0=J15, LD0=H17, etc.). Wrong pins can cause **shorts that physically damage the chip**. Never guess pin numbers — copy from `ref.xdc` / the board manual.
 
 ## Lab report template (Chinese, one per lab)
-Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · **4. 实验步骤** · **5. 实验结果** · **6. 思考题** (only if the manual has one). Fill in the actual OJ + board results; describe the design (module structure, I/O wiring to SW/LED).
+Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · **4. 实验步骤** · **5. 实验结果** · **6. 思考题** (only if the manual requires). Fill in the actual OJ + board results; describe the design (module structure, I/O wiring to SW/LED).
 
 ## Verilog conventions (differ from software defaults)
 - Think in **circuit diagrams**, not code. Except in testbenches, **do not use `for`/`while`** in synthesizable code.
