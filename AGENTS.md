@@ -55,5 +55,14 @@ Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · *
 - Don't use `reg[][]` as a 2D array / RAM; use a real RAM module, one read/write per cycle, no partial-bit writes.
 - OJ (online judge) definitions sometimes differ from the on-board definitions — verify which target you're building for.
 
+## Repo layout / per-lab directory convention (from lab01/lab02 experience)
+Keep each lab self-contained under `labNN/`, one **`expN_name/` subdirectory per exercise**, mirroring the lab manual's exercise numbering:
+- `labNN/exp1_adder/adder.v` — OJ submission module (exact OJ port list, no pins)
+- `labNN/exp2_alu/alu_s.v` — OJ module
+- `labNN/exp2_alu/alu_top.v` — **separate, self-contained board top** (all submodules inlined in this one file)
+- `labNN/exp2_alu/alu_top.xdc` — board pin map for that top
+- The lab PDF stays at `labNN/`.
+Do NOT drop files loose in `labNN/` root; keep the OJ module and the board top as **separate files** in the same `expN_name/` folder when they differ. Report lives at `labNN/labNN实验报告.md`.
+
 ## Per-lab pitfalls
 See `lab00/实验问题指导.md` for detailed gotchas per lab (latch debugging, lab02 overflow/carry in subtraction, lab03 100kHz scan rate, lab08 RAM 32-bit read-modify-write, lab09 single-cycle CPU timing/`nextpc` init, lab12 BRAM "output register" must be unchecked, etc.).
