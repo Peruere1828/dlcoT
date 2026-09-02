@@ -6,6 +6,7 @@ This is a **hardware/FPGA lab course** (数字逻辑与计算机组成), not a s
 - **Vivado 2022.1** only. Newer/older versions may break constraints, IP, or flow.
 - Board: **Digilent Nexys A7-100T** (was Nexys 4 DDR). FPGA = Xilinx Artix-7 `XC7A100T-1CSG324C`.
 - Install & project paths must contain **no Chinese characters**. Vivado quietly breaks on them.
+- **This machine has NO Verilog toolchain** (no Vivado / iverilog / verilator). The assistant cannot compile, run, or lint any `.v` file locally — all verification (behavioral sim, synth) happens in the user's Vivado. Write code that is correct first time; the user runs every testbench in Vivado.
 
 ## Reading the lab PDFs
 The lab PDFs are **not suitable for the assistant to read directly**: Chinese glyphs come out garbled (e.g. 选择器 → 㫍㵗㋹), so do NOT rely on pypdf extraction for requirements. The **user reads the PDF and relays the requirements in Chinese** — treat the user's relayed text as the authoritative spec for each lab.
@@ -22,6 +23,7 @@ Design (RTL) → add constraints (XDC pin map) → **Run Behavioral Simulation**
 - Board is only detected over USB **after its power switch is turned on**. If not found: swap cable, try a lab machine, or ask the instructor to replace the board.
 
 ## Per-lab workflow (user-driven, do not skip stages)
+0. **Functional simulation first** — every sub-experiment that is verified on the board gets a self-checking testbench `<top>_tb.v` in the same exp folder (write it only for the **board top**, not for OJ modules). Style: a few representative selected cases only (must fit Vivado's 1000ns default sim time — **no exhaustive sweeps**), `$display` each mismatch, end with `TEST PASSED`/`TEST FAILED` + `$finish`. The user runs it in Vivado behavioral simulation (tb as sim top) before OJ and before flashing. The user verifies locally; the assistant cannot run sim.
 1. **Write the `.v` design** — port list only, no pin info. The user then submits it to the **online judge (OJ)**; iterate until it passes. The OJ has its own testbench and port definitions — match the module name/ports the OJ expects.
 2. **Only after OJ passes**, write the **constraint (XDC) file** from `ref.xdc` (repo-root pin map, do not modify it; copy pins from there). Then the user flashes the board.
 3. **After board test passes**, write the **lab report**.
@@ -61,6 +63,8 @@ Keep each lab self-contained under `labNN/`, one **`expN_name/` subdirectory per
 - `labNN/exp2_alu/alu_s.v` — OJ module
 - `labNN/exp2_alu/alu_top.v` — **separate, self-contained board top** (all submodules inlined in this one file)
 - `labNN/exp2_alu/alu_top.xdc` — board pin map for that top
+- `labNN/exp2_alu/alu_top_tb.v` — self-checking functional simulation testbench for the board top (same folder, `<top>_tb.v` naming; one per board-bound exercise)
+- `labNN/assets/` — lab report figures: screenshots of simulation waveforms (`expN_simulation.png`) and synthesized schematics (`expN_schematic.png`). PDFs can't be inlined in Markdown, so always save screenshots as PNG (Vivado screenshot / Win+Shift+S / PDF viewer screenshot). Reference from the report with a relative path `![caption](assets/expN_xxx.png)`.
 - The lab PDF stays at `labNN/`.
 Do NOT drop files loose in `labNN/` root; keep the OJ module and the board top as **separate files** in the same `expN_name/` folder when they differ. Report lives at `labNN/labNN实验报告.md`.
 

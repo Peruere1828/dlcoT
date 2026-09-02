@@ -55,7 +55,17 @@
 ## 5. 实验结果
 
 - **exp1_mux4to1**：在线评测（OJ）通过。功能仿真波形与真值表一致；上板后拨动 `SW0/SW1` 选择不同的数据端，`LED0/LED1` 正确显示对应 2 位输入。初次上板时因未重新烧录最新比特流导致开关映射看起来不对，重新下载后行为符合手册要求。
+
+![exp1 功能仿真波形](assets/exp1_simulation.png)
+
+![exp1 综合后的电路原理图](assets/exp1_schematic.png)
+
 - **exp2_priority83**：OJ 通过。上板验证：`SW8` 为使能，`SW7~SW0` 输入数据，`LED2~LED0` 显示 3 位优先编码，`LED4` 显示指示位，最右位七段数码管以十进制显示编码值。例如输入 `00001110` 时编码为 `011`，数码管显示 `3`，与手册一致。
+
+![exp2 功能仿真波形](assets/exp2_simulation.png)
+
+![exp2 综合后的电路原理图](assets/exp2_schematic.png)
+
 - **exp3_graycode**：OJ 通过，64 位二进制转格雷码功能正确。
 
 ### 实验小结
