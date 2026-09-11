@@ -45,6 +45,11 @@ Pin assignment in the XDC file **must match the Nexys A7-100T pinout** (SW0=J15,
 ## Lab report template (Chinese, one per lab)
 Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · **4. 实验步骤** · **5. 实验结果** · **6. 思考题** (only if the manual requires). Fill in the actual OJ + board results; describe the design (module structure, I/O wiring to SW/LED).
 
+### Report style rules
+- **Do NOT put （OJ）/（上板）tags in the report** — not in section headings (`### 4.1 ...（OJ）`) nor in result subsection titles. OJ/上板 is workflow metadata, not report content; just state results normally (e.g. "在线评测通过").
+- **Minimize parenthesized asides （）in general.** Rewrite them inline (e.g. "动态（扫描）显示" → "动态扫描显示", "（周期 10ns）" → "周期 10ns 的 …"). Keep parens only where they carry real info that reads badly inline (pin locations like `CLK100MHZ`（E3）, parameter overrides, component models).
+- **思考题 section is NOT unconditional.** If the lab manual has no 思考题, omit the `## 6. 思考题` section entirely — never emit a placeholder like "（本实验手册未列出思考题。）". Check each lab's manual first.
+
 ## Verilog conventions (differ from software defaults)
 - Think in **circuit diagrams**, not code. Except in testbenches, **do not use `for`/`while`** in synthesizable code.
 - **Avoid inferred latches**: give every combinational `case` a `default` and every `if` an `else`. Latches are a top cause of "sim pass, board fail".
