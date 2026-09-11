@@ -2,6 +2,7 @@
 ## SW[1:0] 模式: 00 时钟 / 01 校时 / 10 闹铃设置 / 11 秒表
 ## SW[3:2] 字段: 00 秒 / 01 分 / 10 时 (校时、闹铃设置用)
 ## SW4 闹铃开关 ; BTNC = +1/开始暂停 ; BTNL = 秒表清零
+## 注意: 本设计不使用 SW5(T18), 该开关已损坏
 
 ## 100MHz 系统时钟
 set_property -dict { PACKAGE_PIN E3    IOSTANDARD LVCMOS33 } [get_ports { CLK100MHZ }];
