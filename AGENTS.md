@@ -42,12 +42,38 @@ The user evaluates by **completely clearing the Vivado project, adding ONLY the 
 ## CRITICAL hardware rule
 Pin assignment in the XDC file **must match the Nexys A7-100T pinout** (SW0=J15, LD0=H17, etc.). Wrong pins can cause **shorts that physically damage the chip**. Never guess pin numbers — copy from `ref.xdc` / the board manual.
 
+## 七段数码管段码（易错，务必照抄，勿手推）
+Nexys A7-100T 的数码管为**共阳极、低电平点亮**。本仓库统一约定 `seg[6:0] = {G,F,E,D,C,B,A}`，bit6=G … bit0=A；接 `HEX` 时用 `HEX = {seg, DP}`（HEX[7]=G … HEX[1]=A、HEX[0]=DP），小数点不需要时置 `1'b1` 熄灭。位选 `AN[n]=0` 选中第 n 位数码管。
+
+**历史坑：`f` 字形左右镜像。** 根因是把段码位序写反，当成 `{A,B,C,D,E,F,G}` 来写。左右镜像最直观的表现就是 `f`：正确段码是 `7'b0001110`，一旦写成它的位反 `7'b0111000`，板面上就是镜像的 f（其余非对称数字也会看起来镜像）。**每写一个新译码器都从下表原样复制，不要再凭记忆手推。**
+
+| 字符 | seg[6:0] | 十六进制 |
+|------|----------|----------|
+| 0 | `7'b1000000` | `0x40` |
+| 1 | `7'b1111001` | `0x79` |
+| 2 | `7'b0100100` | `0x24` |
+| 3 | `7'b0110000` | `0x30` |
+| 4 | `7'b0011001` | `0x19` |
+| 5 | `7'b0010010` | `0x12` |
+| 6 | `7'b0000010` | `0x02` |
+| 7 | `7'b1111000` | `0x78` |
+| 8 | `7'b0000000` | `0x00` |
+| 9 | `7'b0010000` | `0x10` |
+| A | `7'b0001000` | `0x08` |
+| b | `7'b0000011` | `0x03` |
+| C | `7'b1000110` | `0x46` |
+| d | `7'b0100001` | `0x21` |
+| E | `7'b0001100` | `0x0C` |
+| F | `7'b0001110` | `0x0E` |
+
 ## Lab report template (Chinese, one per lab)
-Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · **4. 实验步骤** · **5. 实验结果** · **6. 思考题** (only if the manual requires). Fill in the actual OJ + board results; describe the design (module structure, I/O wiring to SW/LED).
+Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · **4. 实验步骤** · **5. 实验结果** · **6. 思考题** (only if the manual requires) · **个人思考** (always last). Fill in the actual OJ + board results; describe the design (module structure, I/O wiring to SW/LED).
 
 ### Report style rules
 - **Do NOT put （OJ）/（上板）tags in the report** — not in section headings (`### 4.1 ...（OJ）`) nor in result subsection titles. OJ/上板 is workflow metadata, not report content; just state results normally (e.g. "在线评测通过").
-- **Minimize parenthesized asides （）in general.** Rewrite them inline (e.g. "动态（扫描）显示" → "动态扫描显示", "（周期 10ns）" → "周期 10ns 的 …"). Keep parens only where they carry real info that reads badly inline (pin locations like `CLK100MHZ`（E3）, parameter overrides, component models).
+- **Minimize parenthesized asides （）in general.** Rewrite them inline (e.g. "动态（扫描）显示" → "动态扫描显示", "（周期 10ns）" → "周期 10ns 的 …"). Keep parens only where they carry real info that reads badly inline (pin locations like `CLK100MHZ`（E3）, parameter overrides, component models). lab04 报告是正面范例，继续保持。
+- **标点规范。** 中文正文一律用全角标点（，。；：？！）和全角引号“ ”；英文文本用半角引号 `" "`。不要中英文混用半角标点。
+- **每个报告最后必须有一节「个人思考」。** 用真人第一人称、口语化的语气，简单总结本次实验的收获与教训，例如踩到的坑、如何定位、对硬件设计的新认识。不要写成模板套话，不要重复前文实验步骤。
 - **思考题 section is NOT unconditional.** If the lab manual has no 思考题, omit the `## 6. 思考题` section entirely — never emit a placeholder like "（本实验手册未列出思考题。）". Check each lab's manual first.
 
 ## Verilog conventions (differ from software defaults)
@@ -73,5 +99,15 @@ Keep each lab self-contained under `labNN/`, one **`expN_name/` subdirectory per
 - The lab PDF stays at `labNN/`.
 Do NOT drop files loose in `labNN/` root; keep the OJ module and the board top as **separate files** in the same `expN_name/` folder when they differ. Report lives at `labNN/labNN实验报告.md`.
 
+## Lab numbering (current, matches this repo's PDFs)
+The lab PDFs under `labNN/` define the authoritative numbering:
+- **lab08 字符输入界面** — ASCII 字模 ROM + 字符显存 + 键盘回显
+- **lab09 CPU 数据通路** — RV32I 寄存器堆 / ALU / 数据存储器
+- **lab10 单周期 CPU** — RV32I（37 条指令）
+- **lab11 五段流水线 CPU** — 前转与 load-use 阻塞
+- **lab12 计算机系统** — 内存映射外设 + C 软件 + UART 调试
+
+`lab00/实验问题指导.md` 的 per-lab 小节是**旧编号**（CPU 数据通路记作 lab08、单周期记作 lab09、流水线记作 lab10、字符输入界面记作 lab11）。内容仍然适用，但编号要按上表平移，不要照抄。
+
 ## Per-lab pitfalls
-See `lab00/实验问题指导.md` for detailed gotchas per lab (latch debugging, lab02 overflow/carry in subtraction, lab03 100kHz scan rate, lab08 RAM 32-bit read-modify-write, lab09 single-cycle CPU timing/`nextpc` init, lab12 BRAM "output register" must be unchecked, etc.).
+See `lab00/实验问题指导.md` for detailed gotchas per lab (latch debugging, lab02 overflow/carry in subtraction, lab03 100kHz scan rate, lab09 RAM 32-bit read-modify-write, lab10 single-cycle CPU timing/`nextpc` init, lab12 BRAM "output register" must be unchecked, etc.).
