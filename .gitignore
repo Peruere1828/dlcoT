@@ -2,3 +2,7 @@
 lab*/*实验报告.pdf
 # a.txt 是本地需求摘录，不入库
 lab*/a.txt
+
+# Python 缓存
+__pycache__/
+*.pyc
