@@ -200,20 +200,22 @@ module clock_top_tb;
         repeat (200) @(posedge CLK100MHZ);
         check_clock(0,0,0,0,0,2);
 
-        // 3) 校时: 时=23, 分=59, 秒=59
+        // 3) 校时: 由低到高把 秒/分/时 按当前值补到 59/59/23, 避免 59 回绕进位
         SW = 2'b01;
-        SW_F = 2'b10;
-        repeat (23) press_c();
-        SW_F = 2'b01;
-        repeat (59) press_c();
         SW_F = 2'b00;
-        repeat (59) press_c();
+        repeat (59 - (u_dut.sec_t * 10 + u_dut.sec_o)) press_c();
+        SW_F = 2'b01;
+        repeat (59 - (u_dut.min_t * 10 + u_dut.min_o)) press_c();
+        SW_F = 2'b10;
+        repeat (23 - (u_dut.hr_t * 10 + u_dut.hr_o)) press_c();
         check_clock(2,3,5,9,5,9);
         check_led(2'b01);
 
-        // 4) 回时钟模式, 走 3 秒 -> 23:59:59 + 3s = 00:00:02 (23->00 回绕)
+        // 4) 回时钟模式, 对齐 1Hz 节拍后走 3 秒 -> 23:59:59 + 3s = 00:00:02 (23->00 回绕)
         SW = 2'b00;
-        repeat (300) @(posedge CLK100MHZ);
+        @(posedge CLK100MHZ);
+        while (!u_dut.tick_1hz) @(posedge CLK100MHZ);
+        repeat (200) @(posedge CLK100MHZ);
         check_clock(0,0,0,0,0,2);
 
         // 5) 闹铃设置: 默认 00:00:00, 秒设为 07

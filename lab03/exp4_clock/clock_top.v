@@ -29,6 +29,20 @@ module clock_top #(
         .pulse(btnl_press)
     );
 
+    // 两片 BCD 加一(带回绕), limit 为满值: 时 8'h23, 分/秒 8'h59, 百分秒 8'h99
+    function [7:0] bcd_inc;
+        input [7:0] cur;
+        input [7:0] limit;
+        begin
+            if (cur == limit)
+                bcd_inc = 8'h00;
+            else if (cur[3:0] == 4'd9)
+                bcd_inc = {cur[7:4] + 1'b1, 4'd0};
+            else
+                bcd_inc = {cur[7:4], cur[3:0] + 1'b1};
+        end
+    endfunction
+
     // ---- 分频: 1Hz / 100Hz / 100kHz 扫描节拍 ----
     reg [26:0] cnt_1s;
     reg [19:0] cnt_100hz;
@@ -79,51 +93,21 @@ module clock_top #(
     end
 
     wire inc_sec = (tick_1hz & clock_run) | adj_inc_sec;
-    always @(posedge CLK100MHZ) begin
-        if (inc_sec) begin
-            if (sec_o == 4'd9) begin
-                sec_o <= 4'd0;
-                if (sec_t == 4'd5) sec_t <= 4'd0;
-                else               sec_t <= sec_t + 1'b1;
-            end else begin
-                sec_o <= sec_o + 1'b1;
-            end
-        end
-    end
-    wire sec_wrap = inc_sec & (sec_o == 4'd9) & (sec_t == 4'd5);
+    wire sec_wrap = inc_sec & ({sec_t, sec_o} == 8'h59);
+    always @(posedge CLK100MHZ)
+        if (inc_sec)
+            {sec_t, sec_o} <= bcd_inc({sec_t, sec_o}, 8'h59);
 
     wire inc_min = sec_wrap | adj_inc_min;
-    always @(posedge CLK100MHZ) begin
-        if (inc_min) begin
-            if (min_o == 4'd9) begin
-                min_o <= 4'd0;
-                if (min_t == 4'd5) min_t <= 4'd0;
-                else               min_t <= min_t + 1'b1;
-            end else begin
-                min_o <= min_o + 1'b1;
-            end
-        end
-    end
-    wire min_wrap = inc_min & (min_o == 4'd9) & (min_t == 4'd5);
+    wire min_wrap = inc_min & ({min_t, min_o} == 8'h59);
+    always @(posedge CLK100MHZ)
+        if (inc_min)
+            {min_t, min_o} <= bcd_inc({min_t, min_o}, 8'h59);
 
     wire inc_hr = min_wrap | adj_inc_hr;
-    always @(posedge CLK100MHZ) begin
-        if (inc_hr) begin
-            if (hr_t == 4'd2) begin
-                if (hr_o == 4'd3) begin
-                    hr_t <= 4'd0;
-                    hr_o <= 4'd0;
-                end else begin
-                    hr_o <= hr_o + 1'b1;
-                end
-            end else if (hr_o == 4'd9) begin
-                hr_t <= hr_t + 1'b1;
-                hr_o <= 4'd0;
-            end else begin
-                hr_o <= hr_o + 1'b1;
-            end
-        end
-    end
+    always @(posedge CLK100MHZ)
+        if (inc_hr)
+            {hr_t, hr_o} <= bcd_inc({hr_t, hr_o}, 8'h23);
 
     // ---- 闹铃时间 (BCD), 与时钟并行 ----
     reg [3:0] al_sec_o, al_sec_t, al_min_o, al_min_t, al_hr_o, al_hr_t;
@@ -131,39 +115,12 @@ module clock_top #(
         al_sec_o = 4'd0; al_sec_t = 4'd0; al_min_o = 4'd0; al_min_t = 4'd0; al_hr_o = 4'd0; al_hr_t = 4'd0;
     end
     always @(posedge CLK100MHZ) begin
-        if (btnc_press & (mode == 2'b10) & (SW_F == 2'b00)) begin
-            if (al_sec_o == 4'd9) begin
-                al_sec_o <= 4'd0;
-                if (al_sec_t == 4'd5) al_sec_t <= 4'd0;
-                else                  al_sec_t <= al_sec_t + 1'b1;
-            end else begin
-                al_sec_o <= al_sec_o + 1'b1;
-            end
-        end
-        if (btnc_press & (mode == 2'b10) & (SW_F == 2'b01)) begin
-            if (al_min_o == 4'd9) begin
-                al_min_o <= 4'd0;
-                if (al_min_t == 4'd5) al_min_t <= 4'd0;
-                else                  al_min_t <= al_min_t + 1'b1;
-            end else begin
-                al_min_o <= al_min_o + 1'b1;
-            end
-        end
-        if (btnc_press & (mode == 2'b10) & (SW_F == 2'b10)) begin
-            if (al_hr_t == 4'd2) begin
-                if (al_hr_o == 4'd3) begin
-                    al_hr_t <= 4'd0;
-                    al_hr_o <= 4'd0;
-                end else begin
-                    al_hr_o <= al_hr_o + 1'b1;
-                end
-            end else if (al_hr_o == 4'd9) begin
-                al_hr_t <= al_hr_t + 1'b1;
-                al_hr_o <= 4'd0;
-            end else begin
-                al_hr_o <= al_hr_o + 1'b1;
-            end
-        end
+        if (btnc_press & (mode == 2'b10) & (SW_F == 2'b00))
+            {al_sec_t, al_sec_o} <= bcd_inc({al_sec_t, al_sec_o}, 8'h59);
+        if (btnc_press & (mode == 2'b10) & (SW_F == 2'b01))
+            {al_min_t, al_min_o} <= bcd_inc({al_min_t, al_min_o}, 8'h59);
+        if (btnc_press & (mode == 2'b10) & (SW_F == 2'b10))
+            {al_hr_t, al_hr_o} <= bcd_inc({al_hr_t, al_hr_o}, 8'h23);
     end
 
     // 闹铃匹配到时:分:秒完全一致: 到达该时刻 LED0 闪烁约 1 秒
@@ -180,6 +137,9 @@ module clock_top #(
         st_sec_o = 4'd0; st_sec_t = 4'd0;
         st_min_o = 4'd0; st_min_t = 4'd0;
     end
+    wire st_cs_wrap  = ({st_cs_t,  st_cs_o}  == 8'h99);
+    wire st_sec_wrap = ({st_sec_t, st_sec_o} == 8'h59);
+
     always @(posedge CLK100MHZ) begin
         if (btnl_press & (mode == 2'b11)) begin
             st_run <= 1'b0;
@@ -189,33 +149,11 @@ module clock_top #(
         end else if (btnc_press & (mode == 2'b11)) begin
             st_run <= ~st_run;
         end else if (st_run & tick_100hz) begin
-            if (st_cs_o == 4'd9) begin
-                st_cs_o <= 4'd0;
-                if (st_cs_t == 4'd9) begin
-                    st_cs_t <= 4'd0;
-                    if (st_sec_o == 4'd9) begin
-                        st_sec_o <= 4'd0;
-                        if (st_sec_t == 4'd5) begin
-                            st_sec_t <= 4'd0;
-                            if (st_min_o == 4'd9) begin
-                                st_min_o <= 4'd0;
-                                if (st_min_t == 4'd5) st_min_t <= 4'd0;
-                                else                  st_min_t <= st_min_t + 1'b1;
-                            end else begin
-                                st_min_o <= st_min_o + 1'b1;
-                            end
-                        end else begin
-                            st_sec_t <= st_sec_t + 1'b1;
-                        end
-                    end else begin
-                        st_sec_o <= st_sec_o + 1'b1;
-                    end
-                end else begin
-                    st_cs_t <= st_cs_t + 1'b1;
-                end
-            end else begin
-                st_cs_o <= st_cs_o + 1'b1;
-            end
+            {st_cs_t, st_cs_o} <= bcd_inc({st_cs_t, st_cs_o}, 8'h99);
+            if (st_cs_wrap)
+                {st_sec_t, st_sec_o} <= bcd_inc({st_sec_t, st_sec_o}, 8'h59);
+            if (st_cs_wrap & st_sec_wrap)
+                {st_min_t, st_min_o} <= bcd_inc({st_min_t, st_min_o}, 8'h59);
         end
     end
 
