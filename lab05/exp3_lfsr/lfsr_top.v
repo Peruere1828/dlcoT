@@ -107,8 +107,8 @@ module lfsr_top #(
             4'd11: seg = 7'b0000011;
             4'd12: seg = 7'b1000110;
             4'd13: seg = 7'b0100001;
-            4'd14: seg = 7'b0001100;
-            4'd15: seg = 7'b1111111;
+            4'd14: seg = 7'b0000110;
+            4'd15: seg = 7'b0001110;
             default: seg = 7'b1111111;
         endcase
     end
