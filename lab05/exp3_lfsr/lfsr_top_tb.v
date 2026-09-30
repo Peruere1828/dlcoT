@@ -5,7 +5,7 @@ module lfsr_top_tb;
     reg        CLK100MHZ;
     reg        SW0;
     reg        BTNC;
-    wire [7:0] AN, HEX, LED;
+    wire [7:0] AN, HEX;
 
     lfsr_top #(
         .DB_MAX(2),
@@ -15,8 +15,7 @@ module lfsr_top_tb;
         .SW0(SW0),
         .BTNC(BTNC),
         .AN(AN),
-        .HEX(HEX),
-        .LED(LED)
+        .HEX(HEX)
     );
 
     initial CLK100MHZ = 1'b0;
@@ -86,10 +85,6 @@ module lfsr_top_tb;
     task check_value;
         input [7:0] exp;
         begin
-            if (LED !== exp) begin
-                $display("MISMATCH: state=0x%02h expected 0x%02h", LED, exp);
-                errors = errors + 1;
-            end
             check_digit(8'b11111110, exp[3:0]);
             check_digit(8'b11111101, exp[7:4]);
         end

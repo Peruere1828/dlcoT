@@ -1,5 +1,5 @@
-## lab05 exp1_lfsr pin map (Nexys A7-100T)
-## SW0=复位(高有效, 复位后装入种子01), BTNC=移位时钟(消抖), LED7:0=当前随机数
+## lab05 exp3_lfsr pin map (Nexys A7-100T)
+## SW0=复位(高有效, 复位后装入种子01), BTNC=移位时钟(消抖)
 ## 数码管 AN1:AN0 以十六进制显示 8 位随机数
 
 ## 100MHz system clock (消抖与数码管扫描)
@@ -13,16 +13,6 @@ set_property -dict { PACKAGE_PIN J15   IOSTANDARD LVCMOS33 } [get_ports { SW0 }]
 
 ## 按钮 BTNC = 移位时钟
 set_property -dict { PACKAGE_PIN N17   IOSTANDARD LVCMOS33 } [get_ports { BTNC }];
-
-## LED7:0 显示当前 8 位随机数
-set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS33 } [get_ports { LED[0] }];
-set_property -dict { PACKAGE_PIN K15   IOSTANDARD LVCMOS33 } [get_ports { LED[1] }];
-set_property -dict { PACKAGE_PIN J13   IOSTANDARD LVCMOS33 } [get_ports { LED[2] }];
-set_property -dict { PACKAGE_PIN N14   IOSTANDARD LVCMOS33 } [get_ports { LED[3] }];
-set_property -dict { PACKAGE_PIN R18   IOSTANDARD LVCMOS33 } [get_ports { LED[4] }];
-set_property -dict { PACKAGE_PIN V17   IOSTANDARD LVCMOS33 } [get_ports { LED[5] }];
-set_property -dict { PACKAGE_PIN U17   IOSTANDARD LVCMOS33 } [get_ports { LED[6] }];
-set_property -dict { PACKAGE_PIN U16   IOSTANDARD LVCMOS33 } [get_ports { LED[7] }];
 
 ## 数码管位选 AN7:0 (只用 AN1:AN0)
 set_property -dict { PACKAGE_PIN J17   IOSTANDARD LVCMOS33 } [get_ports { AN[0] }];

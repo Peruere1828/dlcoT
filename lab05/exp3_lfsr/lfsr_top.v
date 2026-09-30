@@ -6,8 +6,7 @@ module lfsr_top #(
     input        SW0,
     input        BTNC,
     output [7:0] AN,
-    output [7:0] HEX,
-    output [7:0] LED
+    output [7:0] HEX
 );
 
     reg [25:0] db_cnt;
@@ -54,8 +53,6 @@ module lfsr_top #(
                 state <= {feedback, state[7:1]};
         end
     end
-
-    assign LED = state;
 
     reg [14:0] scan_cnt;
     reg [2:0]  sel;
