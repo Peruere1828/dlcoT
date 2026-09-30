@@ -1,4 +1,4 @@
-## lab06 exp1_ascii pin map (Nexys A7-100T)
+## lab06 exp1_keyboard pin map (Nexys A7-100T)
 ## PS2_CLK=F4, PS2_DATA=B2 (PS/2 键盘), BTNC=复位, LED0=ready, LED1=overflow
 ## 数码管 AN3:AN0=键码与ASCII, AN5:AN4=灭, AN7:AN6=按键总次数(十进制)
 

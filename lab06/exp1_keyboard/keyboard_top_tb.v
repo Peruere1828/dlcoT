@@ -4,7 +4,7 @@ module ps2_keyboard_model(
     output reg ps2_clk,
     output reg ps2_data
 );
-    parameter [31:0] kbd_clk_period = 40;
+    parameter [31:0] kbd_clk_period = 60;
     initial ps2_clk = 1'b1;
 
     task kbd_sendcode;
@@ -28,7 +28,7 @@ module ps2_keyboard_model(
 endmodule
 
 
-module ascii_top_tb;
+module keyboard_top_tb;
 
     reg        CLK100MHZ;
     reg        BTNC;
@@ -36,7 +36,7 @@ module ascii_top_tb;
     wire [7:0] AN, HEX;
     wire [1:0] LED;
 
-    ascii_top #(
+    keyboard_top #(
         .SCAN_MAX(1)
     ) uut (
         .CLK100MHZ(CLK100MHZ),
@@ -158,24 +158,24 @@ module ascii_top_tb;
 
         model.kbd_sendcode(8'h1c);
         #200;
-        expect_state(1'b1, 8'h1c, 8'h41, 1'b0);
+        expect_state(1'b1, 8'h1c, 8'h61, 1'b0);
         check_count(4'd1, 4'd0);
 
         model.kbd_sendcode(8'h1c);
         #200;
-        expect_state(1'b1, 8'h1c, 8'h41, 1'b0);
+        expect_state(1'b1, 8'h1c, 8'h61, 1'b0);
         check_count(4'd1, 4'd0);
 
         model.kbd_sendcode(8'hf0);
         #100;
         model.kbd_sendcode(8'h1c);
         #200;
-        expect_state(1'b0, 8'h1c, 8'h41, 1'b1);
+        expect_state(1'b0, 8'h00, 8'h00, 1'b1);
         check_count(4'd1, 4'd0);
 
         model.kbd_sendcode(8'h1b);
         #200;
-        expect_state(1'b1, 8'h1b, 8'h53, 1'b0);
+        expect_state(1'b1, 8'h1b, 8'h73, 1'b0);
         check_count(4'd2, 4'd0);
 
         if (errors == 0)
