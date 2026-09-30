@@ -39,15 +39,14 @@ module mem_top #(
     wire [3:0] addr   = SW[3:0];
     wire [7:0] wrdata = {4'b0000, SW[7:4]};
 
-    reg [7:0] ram [15:0];
-    initial begin
-        $readmemh("D:/mem1.txt", ram, 0, 15);
-    end
-    always @(posedge mem_clk) begin
-        if (SW[8])
-            ram[addr] <= wrdata;
-    end
-    wire [7:0] rf_out = ram[addr];
+    wire [7:0] rf_out;
+    mem_dist u_rf(
+        .clk(mem_clk),
+        .we(SW[8]),
+        .addr(addr),
+        .din(wrdata),
+        .dout(rf_out)
+    );
 
     wire [7:0] ram_out;
     blk_mem_gen_0 myram(
@@ -124,5 +123,28 @@ module mem_top #(
     end
 
     assign HEX = {seg, 1'b1};
+
+endmodule
+
+module mem_dist(
+    input        clk,
+    input        we,
+    input  [3:0] addr,
+    input  [7:0] din,
+    output [7:0] dout
+);
+
+    reg [7:0] mem [15:0];
+
+    initial begin
+        $readmemh("D:/mem1.txt", mem, 0, 15);
+    end
+
+    always @(posedge clk) begin
+        if (we)
+            mem[addr] <= din;
+    end
+
+    assign dout = mem[addr];
 
 endmodule
