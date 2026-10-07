@@ -10,9 +10,11 @@ Usage:
     python img2coe.py [input_image] [output_coe]
 
 Without arguments a colourful 640x480 test pattern is generated and written
-to vga_image.coe next to a custom image.  Any image format Pillow can read
-works; it is resized to 640x480 and each colour channel is truncated to
-4 bits.
+to vga_image.coe.  Any image format Pillow can read works; if the picture has
+an alpha channel its transparent border is cropped away first, then the image
+is resized to 640x480 and each colour channel is truncated to 4 bits.  This
+matches the course sample picture, whose transparent frame surrounds the real
+640x480 content.
 """
 
 import sys
@@ -58,7 +60,15 @@ def default_image():
 
 
 def load_image(path):
-    img = Image.open(path).convert("RGB")
+    img = Image.open(path)
+    if img.mode in ("RGBA", "LA", "P"):
+        img = img.convert("RGBA")
+        bbox = img.split()[-1].getbbox()
+        if bbox and bbox != (0, 0, img.size[0], img.size[1]):
+            img = img.crop(bbox)
+        bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+        img = Image.alpha_composite(bg, img)
+    img = img.convert("RGB")
     if img.size != (WIDTH, HEIGHT):
         img = img.resize((WIDTH, HEIGHT))
     return img
@@ -76,7 +86,7 @@ def write_coe(img, path):
             if y < HEIGHT:
                 words.append(word_at(img, x, y))
             else:
-                words.append(0)
+                words.append(0xFFF)
 
     with open(path, "w") as f:
         f.write("memory_initialization_radix=16;\n")
