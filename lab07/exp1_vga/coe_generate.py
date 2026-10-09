@@ -3,17 +3,17 @@
 
 This is the course-provided reference converter (`lab7/coe_generate.py`) after
 being adapted so it can actually be used with the lab07 display memory.  The
-original version scans the image line by line, does not resize the picture and
-does not pad the columns, so it neither matches the {h_addr, v_addr[8:0]}
-address mapping nor produces the required 640 x 512 x 12 bit memory.
+original version does not resize the picture and does not pad the columns, so
+its column stride is the image height (480) instead of the 512 required by the
+{h_addr, v_addr[8:0]} address mapping, and it produces fewer than the required
+640 x 512 x 12 bit words.
 
 Fixes applied here:
   * resize the picture to 640 x 480;
-  * write the pixels column-major, i.e. outer loop over the column x and
-    inner loop over the row y, so that a column of 512 words is contiguous;
-  * pad every column to 512 rows, giving 640*512 = 327680 words of 12 bits
-    {R[3:0], G[3:0], B[3:0]}; the 32 padding rows are never scanned, and they
-    are filled with 0xFFF to match the course sample coe file;
+  * pad every column to 512 rows, so a column of 512 words is contiguous and
+    the stride matches the 9-bit v_addr; this gives 640*512 = 327680 words of
+    12 bits {R[3:0], G[3:0], B[3:0]}; the 32 padding rows are never scanned,
+    and they are filled with 0xFFF to match the course sample coe file;
   * when the picture has an alpha channel, crop away the transparent border
     before resizing (this is what the course sample picture needs).
 
