@@ -76,7 +76,7 @@ Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · *
 - **Do NOT put （OJ）/（上板）tags in the report** — not in section headings (`### 4.1 ...（OJ）`) nor in result subsection titles. OJ/上板 is workflow metadata, not report content; just state results normally (e.g. "在线评测通过").
 - **Minimize parenthesized asides （）in general.** Rewrite them inline (e.g. "动态（扫描）显示" → "动态扫描显示", "（周期 10ns）" → "周期 10ns 的 …"). Keep parens only where they carry real info that reads badly inline (pin locations like `CLK100MHZ`（E3）, parameter overrides, component models). lab04 报告是正面范例，继续保持。
 - **标点规范：** 中文正文一律用全角标点（，。；：？！）和全角引号“ ”；英文文本用半角引号 `" "`。不要中英文混用半角标点。
-- **数学公式规范：** 所有数学公式使用 Latex，并用 `$$` 或 `$$$$` 括起
+- **数学公式规范：** 所有数学公式使用 Latex，并用 `$$` 或 `$$$$` 括起，例如 `$x=1$` 或 `$$\int x\mathrm{d}x$$`
 - **每个报告最后必须有一节「个人思考」。** 用真人第一人称、口语化的语气，简单总结本次实验的收获与教训，例如踩到的坑、如何定位、对硬件设计的新认识。不要写成模板套话，不要重复前文实验步骤。
 - **思考题 section is NOT unconditional.** If the lab manual has no 思考题, omit the `## 6. 思考题` section entirely — never emit a placeholder like "（本实验手册未列出思考题。）". Check each lab's manual first.
 
