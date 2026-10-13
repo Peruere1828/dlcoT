@@ -1,19 +1,11 @@
 `timescale 1ns / 1ps
-//=======================================================================
-// lab08 exp1_charterm self-checking testbench
-//
-// 覆盖: 复位清屏 + 提示符, 普通按键回显, Shift 大写/符号, 回车换行,
-//       BackSpace 删字符并跨行回到上一行末尾, 方向键, 行尾自动换行(滚屏),
-//       点阵 ROM 查表。
-// 说明: 键盘每个字节约 440ns, 建议 Vivado 仿真时间设为 1ms 级。
-//       波形上可看 VGA 输出; 逻辑正确性以 charterm_top 内部寄存器为准。
-//=======================================================================
+// charterm_top 自检: 键盘模型发扫描码, 比对显存与光标, 约 76us 跑完
 
 module ps2_keyboard_model(
     output reg ps2_clk,
     output reg ps2_data
 );
-    parameter [31:0] kbd_clk_period = 400;
+    parameter [31:0] kbd_clk_period = 100;
     initial ps2_clk = 1'b1;
 
     task kbd_sendcode;
@@ -85,13 +77,13 @@ module charterm_top_tb;
         input [7:0] b;
         begin
             model.kbd_sendcode(b);
-            #500;
+            #200;
         end
     endtask
 
     task settle;
         begin
-            #1500;
+            #600;
             wait (uut.tstate == T_IDLE);
             #100;
         end
@@ -140,14 +132,14 @@ module charterm_top_tb;
         wait (uut.tstate == T_IDLE);
         #100;
 
-        //--- 1. 复位后: 清屏 + 行首提示符 "> " , 光标在 col2 --------
+        // 1. 复位后: 清屏 + 行首提示符 "> " , 光标在 col2
         chk_byte(cell_idx(5'd0, 7'd0), 8'h3E, 8'd1);
         chk_byte(cell_idx(5'd0, 7'd1), SP,     8'd2);
         chk_byte(cell_idx(5'd0, 7'd2), SP,     8'd3);
         chk_byte(cell_idx(5'd29, 7'd69), SP,   8'd4);
         chk_cur(5'd0, 7'd2, 5'd0);
 
-        //--- 2. 回显普通字符 h i ------------------------------------
+        // 2. 回显普通字符 h i
         send(8'h33); settle;                 // h
         chk_byte(cell_idx(5'd0, 7'd2), 8'h68, 8'd5);
         chk_cur(5'd0, 7'd3, 5'd0);
@@ -155,7 +147,7 @@ module charterm_top_tb;
         chk_byte(cell_idx(5'd0, 7'd3), 8'h69, 8'd6);
         chk_cur(5'd0, 7'd4, 5'd0);
 
-        //--- 3. Shift + i => 'I' -----------------------------------
+        // 3. Shift + i => 'I'
         send(8'h12);                         // left shift make
         #200;
         if (LED[0] !== 1'b1) begin
@@ -173,13 +165,13 @@ module charterm_top_tb;
             errors = errors + 1;
         end
 
-        //--- 4. 回车换行 -> 新行提示符 ------------------------------
+        // 4. 回车换行 -> 新行提示符
         send(8'h5A); settle;                 // Enter
         chk_byte(cell_idx(5'd1, 7'd0), 8'h3E, 8'd8);
         chk_byte(cell_idx(5'd1, 7'd1), SP,     8'd9);
         chk_cur(5'd1, 7'd2, 5'd0);
 
-        //--- 5. 输入 a b 再退格 ------------------------------------
+        // 5. 输入 a b 再退格
         send(8'h1C); settle;                 // a
         send(8'h32); settle;                 // b
         chk_byte(cell_idx(5'd1, 7'd2), 8'h61, 8'd10);
@@ -194,11 +186,11 @@ module charterm_top_tb;
         chk_byte(cell_idx(5'd1, 7'd2), SP, 8'd13);
         chk_cur(5'd1, 7'd2, 5'd0);
 
-        //--- 6. 行首再退格 -> 回到上一行末尾非空字符后 --------------
+        // 6. 行首再退格 -> 回到上一行末尾非空字符后
         send(8'h66); settle;                 // 上一行 col4 'I' 之后 => col5
         chk_cur(5'd0, 7'd5, 5'd0);
 
-        //--- 7. Shift + 1 => '!' -----------------------------------
+        // 7. Shift + 1 => '!'
         send(8'h12); send(8'h16); settle;    // shift+1 => !
         chk_byte(cell_idx(5'd0, 7'd5), 8'h21, 8'd14);
         send(8'hF0); send(8'h16);
@@ -206,7 +198,7 @@ module charterm_top_tb;
         settle;
         chk_cur(5'd0, 7'd6, 5'd0);
 
-        //--- 8. 方向键 ---------------------------------------------
+        // 8. 方向键
         send(8'hE0); send(8'h6B); settle;    // Left
         chk_cur(5'd0, 7'd5, 5'd0);
         send(8'hE0); send(8'h74); settle;    // Right
@@ -218,7 +210,7 @@ module charterm_top_tb;
         send(8'hE0); send(8'h75); settle;    // Up
         chk_cur(5'd0, 7'd6, 5'd0);
 
-        //--- 9. 行尾自动换行 ---------------------------------------
+        // 9. 行尾自动换行
         uut.cur_col = 7'd69;
         #100;
         send(8'h22); settle;                 // x -> 写在 col69 后换行
@@ -226,7 +218,7 @@ module charterm_top_tb;
         chk_byte(cell_idx(5'd1, 7'd0), 8'h3E, 8'd16);
         chk_cur(5'd1, 7'd2, 5'd0);
 
-        //--- 10. 末行回车 -> 滚屏 ----------------------------------
+        // 10. 末行回车 -> 滚屏
         uut.cur_row = 5'd29;
         uut.cur_col = 7'd2;
         #100;
@@ -236,7 +228,7 @@ module charterm_top_tb;
         chk_byte(cell_idx(5'd30, 7'd1), SP,   8'd18);
         chk_byte(cell_idx(5'd30, 7'd69), SP,  8'd19);
 
-        //--- 11. 点阵 ROM 查表 -------------------------------------
+        // 11. 点阵 ROM 查表
         force uut.chr = 8'h41;               // 'A'
         #10;
         if (uut.font_pack !== 144'h000000000E3B198CFE771B0D87C3E0E07000) begin
