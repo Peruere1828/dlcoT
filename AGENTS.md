@@ -4,7 +4,7 @@ This is a **hardware/FPGA lab course** (数字逻辑与计算机组成), not a s
 
 ## Toolchain (exact versions matter)
 - **Vivado 2022.1** only, on another machine.
-- Board: **Digilent Nexys A7-100T** (was Nexys 4 DDR). FPGA = Xilinx Artix-7 `XC7A100T-1CSG324C`.
+- Board: **Digilent Nexys A7-100T** (was Nexys 4 DDR). FPGA = Xilinx Artix-7 `XC7A100T-1CSG324C`(`xc7a100tcsg324-1` in Vivado).
 
 ### Self-check with iverilog (Docker)
 A local Docker image `iverilog:12` is available. Use it for **fast syntax + behavioral pre-checks** before handing code to the user. Compile the design together with a testbench and run it:
@@ -28,7 +28,7 @@ Design (RTL) → add constraints (XDC pin map) → **Run Behavioral Simulation**
 - Board is only detected over USB **after its power switch is turned on**. If not found: swap cable, try a lab machine, or ask the instructor to replace the board.
 
 ## Per-lab workflow (user-driven, do not skip stages)
-0. **Functional simulation first** — every sub-experiment that is verified on the board gets a self-checking testbench `<top>_tb.v` in the same exp folder (write it only for the **board top**, not for OJ modules). Style: a few representative selected cases only (must fit Vivado's 1000ns default sim time — **no exhaustive sweeps**), `$display` each mismatch, end with `TEST PASSED`/`TEST FAILED` + `$finish`. You may run this testbench with iverilog (Docker) first to catch syntax/logic errors; the user then runs it in Vivado behavioral simulation (tb as sim top) before OJ and before flashing.
+0. **Functional simulation first** — every sub-experiment that is verified on the board gets a self-checking testbench `<top>_tb.v` in the same exp folder (write it only for the **board top**, not for OJ modules). Style: a few representative selected cases only (easy cases must fit Vivado's 1000ns default sim time, harder cases should fit in 100us — **no exhaustive sweeps**), `$display` each mismatch, end with `TEST PASSED`/`TEST FAILED` + `$finish`. You may run this testbench with iverilog (Docker) first to catch syntax/logic errors; the user then runs it in Vivado behavioral simulation (tb as sim top) before OJ and before flashing.
 1. **Write the `.v` design** — port list only, no pin info. The user then submits it to the **online judge (OJ)**; iterate until it passes. The OJ has its own testbench and port definitions — match the module name/ports the OJ expects.
 2. **Only after OJ passes**, write the **constraint (XDC) file** from `ref.xdc` (repo-root pin map, do not modify it; copy pins from there). Then the user flashes the board.
 3. **After board test passes**, write the **lab report**.
@@ -38,6 +38,7 @@ The user evaluates by **completely clearing the Vivado project, adding ONLY the 
 - Be **one standalone module in one `.v` file** — all submodules (decoder, mux, encoder, …) inlined or in the same file, **zero dependency on any other file** (no separate OJ module needed for board builds).
 - Match the XDC port names exactly (that `.v` + `.xdc` pair must build and flash alone).
 - If the OJ module and the board top differ, keep them as **separate files**: the OJ design file stays as-is for OJ submission; the board gets its own self-contained top file.
+- **Exception for difficult experiments:** when inlining everything makes the file unreadable, the single-file rule may be relaxed (e.g. lab08 字符输入界面). Extra generated data files are then allowed — for example a Font ROM loaded with `$readmemh` from a `font.mem` produced by a `make_font.py` in the same folder. In that case always state the complete build file list (`.v` + data file + `.xdc`) and keep the generator committed next to its output.
 
 ## User evaluation flow (for guiding the user)
 1. User clears all previous project content, adds the assistant's code files + XDC, sets top module, runs synthesis → implementation → generate bitstream → program board.
