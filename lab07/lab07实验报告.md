@@ -107,7 +107,7 @@ VGA 控制器对外提供当前扫描到的像素坐标 h_addr 与 v_addr，上�
 
 ![exp1 自定义图片](assets/exp1_custom.png)
 
-![exp1 上板显示效果](assets/exp1_board.png)
+![exp1 上板显示效果](assets/exp1_board.jpg)
 
 ### 5.3 确定有限状态自动机
 
@@ -125,4 +125,4 @@ VGA 控制器对外提供当前扫描到的像素坐标 h_addr 与 v_addr，上�
 
 ICS 讲过用内存的一片特定地址来表示显存。
 
-课程参考的 `coe_generate` 反正挺粗糙的，关键是没有 pad 到 512，改了这个点基本就好了。
+核心的 VGA 代码在实验手册都有了，要实现的似乎只有一点点的接线（？）。课程参考的 `coe_generate` 反正挺粗糙的，关键是没有 pad 到 512，改了这个点基本就好了。
