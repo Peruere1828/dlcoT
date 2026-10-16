@@ -34,7 +34,7 @@ module keyboard_top_tb;
     reg        BTNC;
     wire       PS2_CLK, PS2_DATA;
     wire [7:0] AN, HEX;
-    wire [1:0] LED;
+    wire [3:0] LED;
 
     keyboard_top #(
         .SCAN_MAX(1)
@@ -101,6 +101,21 @@ module keyboard_top_tb;
         end
     endtask
 
+    task expect_led;
+        input exp_shift;
+        input exp_ctrl;
+        begin
+            if (LED[0] !== exp_shift) begin
+                $display("MISMATCH: LED0(shift)=%b expected %b", LED[0], exp_shift);
+                errors = errors + 1;
+            end
+            if (LED[1] !== exp_ctrl) begin
+                $display("MISMATCH: LED1(ctrl)=%b expected %b", LED[1], exp_ctrl);
+                errors = errors + 1;
+            end
+        end
+    endtask
+
     task expect_state;
         input        exp_held;
         input [7:0]  exp_key;
@@ -146,6 +161,14 @@ module keyboard_top_tb;
         end
     endtask
 
+    task send;
+        input [7:0] code;
+        begin
+            model.kbd_sendcode(code);
+            #200;
+        end
+    endtask
+
     initial begin
         CLK100MHZ = 1'b0;
         BTNC = 1'b1;
@@ -154,29 +177,90 @@ module keyboard_top_tb;
         BTNC = 1'b0;
         #100;
 
+        // 复位后：无按键，数码管全灭，修饰键 LED 全灭
         expect_state(1'b0, 8'h00, 8'h00, 1'b1);
+        expect_led(1'b0, 1'b0);
+        check_count(4'd0, 4'd0);
 
-        model.kbd_sendcode(8'h1c);
-        #200;
-        expect_state(1'b1, 8'h1c, 8'h61, 1'b0);
-        check_count(4'd1, 4'd0);
-
-        model.kbd_sendcode(8'h1c);
-        #200;
-        expect_state(1'b1, 8'h1c, 8'h61, 1'b0);
-        check_count(4'd1, 4'd0);
-
-        model.kbd_sendcode(8'hf0);
-        #100;
-        model.kbd_sendcode(8'h1c);
-        #200;
+        // 左 Shift 按下：只亮 LED0，不算按键，不计入总数
+        send(8'h12);
+        expect_led(1'b1, 1'b0);
         expect_state(1'b0, 8'h00, 8'h00, 1'b1);
+        check_count(4'd0, 4'd0);
+
+        // Shift + 1 -> '!' (0x21)
+        send(8'h16);
+        expect_state(1'b1, 8'h16, 8'h21, 1'b0);
+        expect_led(1'b1, 1'b0);
         check_count(4'd1, 4'd0);
 
-        model.kbd_sendcode(8'h1b);
-        #200;
-        expect_state(1'b1, 8'h1b, 8'h73, 1'b0);
+        // 松开 1：键码与 ASCII 归零，Shift 仍按住
+        send(8'hf0);
+        send(8'h16);
+        expect_state(1'b0, 8'h00, 8'h00, 1'b1);
+        expect_led(1'b1, 1'b0);
+        check_count(4'd1, 4'd0);
+
+        // Shift + a -> 'A' (0x41)
+        send(8'h1c);
+        expect_state(1'b1, 8'h1c, 8'h41, 1'b0);
         check_count(4'd2, 4'd0);
+
+        // 松开 a，再松开左 Shift
+        send(8'hf0);
+        send(8'h1c);
+        send(8'hf0);
+        send(8'h12);
+        expect_state(1'b0, 8'h00, 8'h00, 1'b1);
+        expect_led(1'b0, 1'b0);
+
+        // 无 Shift 时 2 -> '2' (0x32)
+        send(8'h1e);
+        expect_state(1'b1, 8'h1e, 8'h32, 1'b0);
+        check_count(4'd3, 4'd0);
+
+        // 按住 2 期间再按 Shift：ASCII 立即变为 '@' (0x40)
+        send(8'h12);
+        expect_state(1'b1, 8'h1e, 8'h40, 1'b0);
+        expect_led(1'b1, 1'b0);
+
+        // 松开 Shift：ASCII 变回 '2'
+        send(8'hf0);
+        send(8'h12);
+        expect_state(1'b1, 8'h1e, 8'h32, 1'b0);
+        expect_led(1'b0, 1'b0);
+
+        // 松开 2
+        send(8'hf0);
+        send(8'h1e);
+        expect_state(1'b0, 8'h00, 8'h00, 1'b1);
+        check_count(4'd3, 4'd0);
+
+        // 左 Ctrl 按下/松开：只亮 LED1，不计数
+        send(8'h14);
+        expect_led(1'b0, 1'b1);
+        expect_state(1'b0, 8'h00, 8'h00, 1'b1);
+        check_count(4'd3, 4'd0);
+        send(8'hf0);
+        send(8'h14);
+        expect_led(1'b0, 1'b0);
+
+        // 右 Shift (0x59) + ; -> ':' (0x3a)
+        send(8'h59);
+        expect_led(1'b1, 1'b0);
+        send(8'h4c);
+        expect_state(1'b1, 8'h4c, 8'h3a, 1'b0);
+        check_count(4'd4, 4'd0);
+        send(8'hf0);
+        send(8'h4c);
+        send(8'hf0);
+        send(8'h59);
+        expect_led(1'b0, 1'b0);
+
+        // 无 Shift 的普通按键仍按原表转换：s -> 0x73
+        send(8'h1b);
+        expect_state(1'b1, 8'h1b, 8'h73, 1'b0);
+        check_count(4'd5, 4'd0);
 
         if (errors == 0)
             $display("TEST PASSED");

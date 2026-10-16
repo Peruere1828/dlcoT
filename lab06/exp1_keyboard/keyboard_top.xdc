@@ -1,5 +1,6 @@
 ## lab06 exp1_keyboard pin map (Nexys A7-100T)
-## PS2_CLK=F4, PS2_DATA=B2 (PS/2 键盘), BTNC=复位, LED0=ready, LED1=overflow
+## PS2_CLK=F4, PS2_DATA=B2 (PS/2 键盘), BTNC=复位
+## LED0=Shift 按住, LED1=Ctrl 按住, LED2=ready, LED3=overflow
 ## 数码管 AN3:AN0=键码与ASCII, AN5:AN4=灭, AN7:AN6=按键总次数(十进制)
 
 ## 100MHz system clock (键盘接收与数码管扫描)
@@ -15,9 +16,11 @@ set_property -dict { PACKAGE_PIN B2    IOSTANDARD LVCMOS33 } [get_ports { PS2_DA
 ## 复位按钮 BTNC
 set_property -dict { PACKAGE_PIN N17   IOSTANDARD LVCMOS33 } [get_ports { BTNC }];
 
-## 调试指示灯 LED0=ready LED1=overflow
+## 调试指示灯 LED0=Shift LED1=Ctrl LED2=ready LED3=overflow
 set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS33 } [get_ports { LED[0] }];
 set_property -dict { PACKAGE_PIN K15   IOSTANDARD LVCMOS33 } [get_ports { LED[1] }];
+set_property -dict { PACKAGE_PIN J13   IOSTANDARD LVCMOS33 } [get_ports { LED[2] }];
+set_property -dict { PACKAGE_PIN N14   IOSTANDARD LVCMOS33 } [get_ports { LED[3] }];
 
 ## 数码管位选 AN7:0
 set_property -dict { PACKAGE_PIN J17   IOSTANDARD LVCMOS33 } [get_ports { AN[0] }];

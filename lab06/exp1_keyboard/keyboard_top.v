@@ -7,7 +7,7 @@ module keyboard_top #(
     input        BTNC,
     output [7:0] AN,
     output [7:0] HEX,
-    output [1:0] LED
+    output [3:0] LED
 );
 
     wire        ready;
@@ -26,76 +26,136 @@ module keyboard_top #(
         .overflow(overflow)
     );
 
-    assign LED[0] = ready;
-    assign LED[1] = overflow;
+    //---- 修饰键状态 ----------------------------------------------------
+    // 只识别左 Shift(12)、右 Shift(59)、左 Ctrl(14)，三者都是单个字节；
+    // 键码为 E0 xx 的扩展键（右 Alt、右 Ctrl 等）不作处理
+    reg  sh_l, sh_r;   // 左/右 Shift
+    reg  ct_l;         // 左 Ctrl
+    wire shift_down = sh_l | sh_r;
+    wire ctrl_down  = ct_l;
 
-    function [7:0] ascii_of;
+    // LED0 = Shift 按住, LED1 = Ctrl 按住, LED2 = ready, LED3 = overflow
+    assign LED[0] = shift_down;
+    assign LED[1] = ctrl_down;
+    assign LED[2] = ready;
+    assign LED[3] = overflow;
+
+    //---- 扫描码 -> ASCII 查找表 ----------------------------------------
+    function [7:0] ascii_base;
         input [7:0] code;
         begin
             case (code)
-                8'h45: ascii_of = 8'h30; // 0
-                8'h16: ascii_of = 8'h31; // 1
-                8'h1e: ascii_of = 8'h32; // 2
-                8'h26: ascii_of = 8'h33; // 3
-                8'h25: ascii_of = 8'h34; // 4
-                8'h2e: ascii_of = 8'h35; // 5
-                8'h36: ascii_of = 8'h36; // 6
-                8'h3d: ascii_of = 8'h37; // 7
-                8'h3e: ascii_of = 8'h38; // 8
-                8'h46: ascii_of = 8'h39; // 9
-                8'h1c: ascii_of = 8'h61; // a
-                8'h32: ascii_of = 8'h62; // b
-                8'h21: ascii_of = 8'h63; // c
-                8'h23: ascii_of = 8'h64; // d
-                8'h24: ascii_of = 8'h65; // e
-                8'h2b: ascii_of = 8'h66; // f
-                8'h34: ascii_of = 8'h67; // g
-                8'h33: ascii_of = 8'h68; // h
-                8'h43: ascii_of = 8'h69; // i
-                8'h3b: ascii_of = 8'h6a; // j
-                8'h42: ascii_of = 8'h6b; // k
-                8'h4b: ascii_of = 8'h6c; // l
-                8'h3a: ascii_of = 8'h6d; // m
-                8'h31: ascii_of = 8'h6e; // n
-                8'h44: ascii_of = 8'h6f; // o
-                8'h4d: ascii_of = 8'h70; // p
-                8'h15: ascii_of = 8'h71; // q
-                8'h2d: ascii_of = 8'h72; // r
-                8'h1b: ascii_of = 8'h73; // s
-                8'h2c: ascii_of = 8'h74; // t
-                8'h3c: ascii_of = 8'h75; // u
-                8'h2a: ascii_of = 8'h76; // v
-                8'h1d: ascii_of = 8'h77; // w
-                8'h22: ascii_of = 8'h78; // x
-                8'h35: ascii_of = 8'h79; // y
-                8'h1a: ascii_of = 8'h7a; // z
-                8'h29: ascii_of = 8'h20; // space
-                8'h0d: ascii_of = 8'h20; // tab
-                8'h5a: ascii_of = 8'h0d; // enter
-                8'h66: ascii_of = 8'h08; // backspace
-                8'h0e: ascii_of = 8'h60; // `
-                8'h4e: ascii_of = 8'h2d; // -
-                8'h55: ascii_of = 8'h3d; // =
-                8'h54: ascii_of = 8'h5b; // [
-                8'h5b: ascii_of = 8'h5d; // ]
-                8'h5d: ascii_of = 8'h5c; // \
-                8'h4c: ascii_of = 8'h3b; // ;
-                8'h52: ascii_of = 8'h27; // '
-                8'h41: ascii_of = 8'h2c; // ,
-                8'h49: ascii_of = 8'h2e; // .
-                8'h4a: ascii_of = 8'h2f; // /
-                default: ascii_of = 8'h00;
+                8'h45: ascii_base = 8'h30; // 0
+                8'h16: ascii_base = 8'h31; // 1
+                8'h1e: ascii_base = 8'h32; // 2
+                8'h26: ascii_base = 8'h33; // 3
+                8'h25: ascii_base = 8'h34; // 4
+                8'h2e: ascii_base = 8'h35; // 5
+                8'h36: ascii_base = 8'h36; // 6
+                8'h3d: ascii_base = 8'h37; // 7
+                8'h3e: ascii_base = 8'h38; // 8
+                8'h46: ascii_base = 8'h39; // 9
+                8'h1c: ascii_base = 8'h61; // a
+                8'h32: ascii_base = 8'h62; // b
+                8'h21: ascii_base = 8'h63; // c
+                8'h23: ascii_base = 8'h64; // d
+                8'h24: ascii_base = 8'h65; // e
+                8'h2b: ascii_base = 8'h66; // f
+                8'h34: ascii_base = 8'h67; // g
+                8'h33: ascii_base = 8'h68; // h
+                8'h43: ascii_base = 8'h69; // i
+                8'h3b: ascii_base = 8'h6a; // j
+                8'h42: ascii_base = 8'h6b; // k
+                8'h4b: ascii_base = 8'h6c; // l
+                8'h3a: ascii_base = 8'h6d; // m
+                8'h31: ascii_base = 8'h6e; // n
+                8'h44: ascii_base = 8'h6f; // o
+                8'h4d: ascii_base = 8'h70; // p
+                8'h15: ascii_base = 8'h71; // q
+                8'h2d: ascii_base = 8'h72; // r
+                8'h1b: ascii_base = 8'h73; // s
+                8'h2c: ascii_base = 8'h74; // t
+                8'h3c: ascii_base = 8'h75; // u
+                8'h2a: ascii_base = 8'h76; // v
+                8'h1d: ascii_base = 8'h77; // w
+                8'h22: ascii_base = 8'h78; // x
+                8'h35: ascii_base = 8'h79; // y
+                8'h1a: ascii_base = 8'h7a; // z
+                8'h29: ascii_base = 8'h20; // space
+                8'h0d: ascii_base = 8'h20; // tab
+                8'h5a: ascii_base = 8'h0d; // enter
+                8'h66: ascii_base = 8'h08; // backspace
+                8'h0e: ascii_base = 8'h60; // `
+                8'h4e: ascii_base = 8'h2d; // -
+                8'h55: ascii_base = 8'h3d; // =
+                8'h54: ascii_base = 8'h5b; // [
+                8'h5b: ascii_base = 8'h5d; // ]
+                8'h5d: ascii_base = 8'h5c; // \
+                8'h4c: ascii_base = 8'h3b; // ;
+                8'h52: ascii_base = 8'h27; // '
+                8'h41: ascii_base = 8'h2c; // ,
+                8'h49: ascii_base = 8'h2e; // .
+                8'h4a: ascii_base = 8'h2f; // /
+                default: ascii_base = 8'h00;
             endcase
         end
     endfunction
 
-    localparam S_IDLE  = 1'b0;
-    localparam S_BREAK = 1'b1;
+    // 按住 Shift 时的 ASCII：字母转大写，数字与符号键转为上档字符
+    function [7:0] ascii_shift;
+        input [7:0] code;
+        begin
+            case (code)
+                8'h16: ascii_shift = 8'h21; // 1 -> !
+                8'h1e: ascii_shift = 8'h40; // 2 -> @
+                8'h26: ascii_shift = 8'h23; // 3 -> #
+                8'h25: ascii_shift = 8'h24; // 4 -> $
+                8'h2e: ascii_shift = 8'h25; // 5 -> %
+                8'h36: ascii_shift = 8'h5e; // 6 -> ^
+                8'h3d: ascii_shift = 8'h26; // 7 -> &
+                8'h3e: ascii_shift = 8'h2a; // 8 -> *
+                8'h46: ascii_shift = 8'h28; // 9 -> (
+                8'h45: ascii_shift = 8'h29; // 0 -> )
+                8'h0e: ascii_shift = 8'h7e; // ` -> ~
+                8'h4e: ascii_shift = 8'h5f; // - -> _
+                8'h55: ascii_shift = 8'h2b; // = -> +
+                8'h54: ascii_shift = 8'h7b; // [ -> {
+                8'h5b: ascii_shift = 8'h7d; // ] -> }
+                8'h5d: ascii_shift = 8'h7c; // \ -> |
+                8'h4c: ascii_shift = 8'h3a; // ; -> :
+                8'h52: ascii_shift = 8'h22; // ' -> "
+                8'h41: ascii_shift = 8'h3c; // , -> <
+                8'h49: ascii_shift = 8'h3e; // . -> >
+                8'h4a: ascii_shift = 8'h3f; // / -> ?
+                // a~z 的小写 ASCII 减 0x20 即大写
+                8'h1c, 8'h32, 8'h21, 8'h23, 8'h24, 8'h2b, 8'h34, 8'h33,
+                8'h43, 8'h3b, 8'h42, 8'h4b, 8'h3a, 8'h31, 8'h44, 8'h4d,
+                8'h15, 8'h2d, 8'h1b, 8'h2c, 8'h3c, 8'h2a, 8'h1d, 8'h22,
+                8'h35, 8'h1a:
+                    ascii_shift = ascii_base(code) - 8'h20;
+                default: ascii_shift = ascii_base(code);
+            endcase
+        end
+    endfunction
 
-    reg        state;
+    function [7:0] ascii_of;
+        input [7:0] code;
+        input       shifted;
+        begin
+            if (shifted)
+                ascii_of = ascii_shift(code);
+            else
+                ascii_of = ascii_base(code);
+        end
+    endfunction
+
+    //---- 扫描码解析状态机 ----------------------------------------------
+    localparam S_IDLE  = 1'b0;  // 等待通码
+    localparam S_BREAK = 1'b1;  // 刚收到 F0，下一字节为断码
+
     reg        held;
     reg [7:0]  keycode;
-    reg [7:0]  ascii;
+    reg        state;
     reg [3:0]  bcd_u, bcd_t;
 
     always @(posedge CLK100MHZ) begin
@@ -104,34 +164,60 @@ module keyboard_top #(
             state     <= S_IDLE;
             held      <= 1'b0;
             keycode   <= 8'h00;
-            ascii     <= 8'h00;
+            sh_l      <= 1'b0;
+            sh_r      <= 1'b0;
+            ct_l      <= 1'b0;
             bcd_u     <= 4'd0;
             bcd_t     <= 4'd0;
         end else if (ready && nextdata_n) begin
             nextdata_n <= 1'b0;
-            if (rx == 8'hf0) begin
-                state <= S_BREAK;
-            end else if (state == S_BREAK) begin
-                state   <= S_IDLE;
-                held    <= 1'b0;
-                keycode <= 8'h00;
-                ascii   <= 8'h00;
-            end else if (!held) begin
-                keycode <= rx;
-                ascii   <= ascii_of(rx);
-                held    <= 1'b1;
-                if (bcd_u == 4'd9) begin
-                    bcd_u <= 4'd0;
-                    if (bcd_t == 4'd9)
-                        bcd_t <= 4'd0;
-                    else
-                        bcd_t <= bcd_t + 1'b1;
-                end else begin
-                    bcd_u <= bcd_u + 1'b1;
+            case (state)
+                S_IDLE: begin
+                    if (rx == 8'hf0) begin
+                        state <= S_BREAK;
+                    end else if (rx == 8'h12) begin
+                        sh_l <= 1'b1;
+                    end else if (rx == 8'h59) begin
+                        sh_r <= 1'b1;
+                    end else if (rx == 8'h14) begin
+                        ct_l <= 1'b1;
+                    end else if (!held) begin
+                        keycode <= rx;
+                        held    <= 1'b1;
+                        if (bcd_u == 4'd9) begin
+                            bcd_u <= 4'd0;
+                            if (bcd_t == 4'd9)
+                                bcd_t <= 4'd0;
+                            else
+                                bcd_t <= bcd_t + 1'b1;
+                        end else begin
+                            bcd_u <= bcd_u + 1'b1;
+                        end
+                    end
                 end
-            end
+
+                S_BREAK: begin
+                    state <= S_IDLE;
+                    if (rx == 8'h12)
+                        sh_l <= 1'b0;
+                    else if (rx == 8'h59)
+                        sh_r <= 1'b0;
+                    else if (rx == 8'h14)
+                        ct_l <= 1'b0;
+                    else begin
+                        // 普通按键松开
+                        held    <= 1'b0;
+                        keycode <= 8'h00;
+                    end
+                end
+
+                default: state <= S_IDLE;
+            endcase
         end
     end
+
+    // ASCII 随键码与 Shift 状态实时变化
+    wire [7:0] ascii = ascii_of(keycode, shift_down);
 
     reg [14:0] scan_cnt;
     reg [2:0]  sel;
