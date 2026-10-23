@@ -106,7 +106,7 @@ load 指令的时序最紧：数据存储器在上升沿读出，寄存器堆在
 
 ### 2.5 上板顶层与存储器映射
 
-上板顶层把 CPU、指令 ROM、数据存储器和外设都放在一个文件里。为了在不增加外部数据文件的前提下演示多个程序，4 段程序各占 256 字的 ROM 空间，由 `SW[15:14]` 选择。指令 ROM 采用组合读取，地址取 PC 而不是 NextPC。这样做有两个好处：PC 是寄存器，组合读不会形成环路；上电后不需要先用一个时钟沿把 BRAM 输出初始化，PC 从 0 开始就能取到正确的第一条指令。
+上板工程按功能拆成 `cpu_top.v`、`rv32is.v`、`prog_rom.v`、`board_dmem.v` 四个 Verilog 文件，顶层只负责时钟、复位、存储器映射和外设。为了在不增加外部数据文件的前提下演示多个程序，4 段程序各占 256 字的 ROM 空间，由 `SW[15:14]` 选择。指令 ROM 采用组合读取，地址取 PC 而不是 NextPC。这样做有两个好处：PC 是寄存器，组合读不会形成环路；上电后不需要先用一个时钟沿把 BRAM 输出初始化，PC 从 0 开始就能取到正确的第一条指令。
 
 CPU 的数据地址空间划分为：
 
@@ -128,7 +128,7 @@ CPU 的数据地址空间划分为：
 
 ### 4.1 CPU 模块
 
-在线评测模块写在 `lab09/exp1_cpu/rv32is.v`，端口与课程 testbench 一致：
+两个在线评测题目使用相同的端口定义，都提交 `lab09/exp1_cpu/rv32is.v` 这一个文件。模块端口与课程 testbench 一致：
 
 ```verilog
 module rv32is(
@@ -180,7 +180,7 @@ assign dmemwrclk = ~clock;  // 下降沿写数据存储器
 
 ### 4.4 上板顶层
 
-上板文件为 `lab09/exp2_board/cpu_top.v` 和 `cpu_top.xdc`。`cpu_top.v` 是自包含的单文件，里面包含 `cpu_top`、`prog_rom`、`board_dmem`、`rv32is`、`rv32i_regfile` 五个模块，加上 XDC 即可综合，不需要任何外部数据文件。
+上板文件为 `lab09/exp2_board/` 下的 `cpu_top.v`、`rv32is.v`、`prog_rom.v`、`board_dmem.v` 和 `cpu_top.xdc`，把这 5 个文件加入工程、把顶层设为 `cpu_top` 即可综合，不需要任何外部数据文件。`rv32is.v` 与在线评测提交的 CPU 文件相同，`prog_rom.v` 存放 4 段程序的机器码，`board_dmem.v` 是 4KB 数据存储器。
 
 板上资源分配：
 
@@ -195,7 +195,7 @@ assign dmemwrclk = ~clock;  // 下降沿写数据存储器
 
 ```bash
 cd lab09/exp2_board
-python3 make_rom.py --update cpu_top.v
+python3 make_rom.py --update prog_rom.v
 ```
 
 素数判断没有除法指令，程序用重复减法求余数；gcd 用辗转相减。两段程序都处理了参数为 0 的边界情况。
@@ -237,7 +237,7 @@ slti    sltiu  sltu   sra    srai   srl    srli   sub    sw
 xor     xori
 ```
 
-上板顶层里复制的那份 `rv32is` 也用同一套测试集跑过，结果同样是 38/38，说明上板文件与在线评测模块的行为一致。
+`exp2_board/rv32is.v` 与在线评测模块是同一份代码，也用同一套测试集跑过，结果同样是 38/38。
 
 ### 5.3 上板
 

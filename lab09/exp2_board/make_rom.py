@@ -3,8 +3,8 @@
 """make_rom.py : 用 tools/rvasm.py 汇编上板程序, 生成 cpu_top.v 里的 ROM 初始化块
 
 用法:
-    python3 make_rom.py                  # 只打印程序长度与生成的 Verilog 块
-    python3 make_rom.py --update cpu_top.v   # 就地替换 cpu_top.v 中的 ROM 块
+    python3 make_rom.py                      # 只打印生成的 Verilog 块
+    python3 make_rom.py --update prog_rom.v  # 就地替换 prog_rom.v 中的 ROM 块
 
 每个 .S 汇编成一个 256 字的 ROM, 由 SW[15:14] 选择. 程序内地址仍从 0 开始,
 分支/跳转都是 PC 相对寻址, 因此不需要关心它在 ROM 中的绝对位置.

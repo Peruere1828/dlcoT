@@ -1,4 +1,5 @@
 ## lab09 exp2_board 单周期 CPU 上板引脚 (Nexys A7-100T)
+## 上板文件: cpu_top.v + rv32is.v + prog_rom.v + board_dmem.v + cpu_top.xdc
 ## SW[15:14]=程序选择, SW[13]=1 自动运行/0 BTNC 单步, SW[7:4]=gcd 第二参数, SW[3:0]=n
 ## CPU_RESETN=C12 低有效复位, BTNC=N17 单步, LED[15:0]=PC 低 16 位
 ## AN[7:0]=位选, HEX[7:0]={seg[6:0],DP}=32 位结果

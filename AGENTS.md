@@ -39,6 +39,7 @@ The user evaluates by **completely clearing the Vivado project, adding ONLY the 
 - Match the XDC port names exactly (that `.v` + `.xdc` pair must build and flash alone).
 - If the OJ module and the board top differ, keep them as **separate files**: the OJ design file stays as-is for OJ submission; the board gets its own self-contained top file.
 - **Exception for difficult experiments:** when inlining everything makes the file unreadable, the single-file rule may be relaxed (e.g. lab08 字符输入界面). Extra generated data files are then allowed — for example a Font ROM loaded with `$readmemh` from a `font.mem` produced by a `make_font.py` in the same folder. In that case always state the complete build file list (`.v` + data file + `.xdc`) and keep the generator committed next to its output.
+- **lab09 exp2_board is explicitly multi-file** (user request): `cpu_top.v` + `rv32is.v` + `prog_rom.v` + `board_dmem.v` + `cpu_top.xdc`. The OJ module stays single-file at `lab09/exp1_cpu/rv32is.v`; keep the board copy identical and state the full build list in the report.
 
 ## User evaluation flow (for guiding the user)
 1. User clears all previous project content, adds the assistant's code files + XDC, sets top module, runs synthesis → implementation → generate bitstream → program board.
