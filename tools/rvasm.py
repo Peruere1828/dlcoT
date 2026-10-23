@@ -212,8 +212,16 @@ def assemble(src):
     lines = []
     for raw in src.splitlines():
         line = raw.split("#", 1)[0].split(";", 1)[0].strip()
-        if line:
-            lines.append(line)
+        if not line:
+            continue
+        # 忽略 .globl/.text 等汇编器指示, 只保留 .word
+        if line.startswith("."):
+            parts = line.split(None, 1)
+            if parts[0].lower() == ".word":
+                line = "word " + (parts[1] if len(parts) > 1 else "0")
+            else:
+                continue
+        lines.append(line)
 
     # 第一遍: 收集标签地址
     labels = {}
