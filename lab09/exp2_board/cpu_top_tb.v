@@ -19,7 +19,7 @@ module cpu_top_tb;
     // 缩小各计数器, 让仿真在几十微秒内跑完
     cpu_top #(
         .POR_BITS (3),
-        .DIV_BITS (1),
+        .DIV_BITS (2),
         .DB_BITS  (2),
         .SCAN_BITS(2)
     ) uut (
@@ -131,14 +131,26 @@ module cpu_top_tb;
         input [3:0]  m;
         input [31:0] exp;
         input [15:0] exp_pc;
+        integer timeout;
         begin
             SW = {prog, 1'b1, 5'b0, m, n};
             CPU_RESETN = 1'b0;
             repeat (10) @(posedge CLK100MHZ);
             CPU_RESETN = 1'b1;
 
-            repeat (600) @(posedge CLK100MHZ);
+            // 等程序跑到停机指令 j hang, PC 会停在那里
+            timeout = 0;
+            while ((uut.dbgdata[15:0] !== exp_pc) && (timeout < 20000)) begin
+                @(posedge CLK100MHZ);
+                timeout = timeout + 1;
+            end
             #1;
+
+            if (timeout >= 20000) begin
+                $display("MISMATCH: prog=%0d n=%0d m=%0d 未停机, pc=0x%04h",
+                         prog, n, m, uut.dbgdata[15:0]);
+                errors = errors + 1;
+            end
 
             if (uut.result_reg !== exp) begin
                 $display("MISMATCH: prog=%0d n=%0d m=%0d result=0x%08h expected 0x%08h",
@@ -202,6 +214,7 @@ module cpu_top_tb;
         run_case(2'd3, 4'd12, 4'd8, gcd_sub(12, 8), 16'd64);
         run_case(2'd3, 4'd0,  4'd9, gcd_sub(0, 9),  16'd64);
 
+        $display("simulation time: %0t (%0d ns)", $time, $time);
         if (errors == 0)
             $display("TEST PASSED");
         else

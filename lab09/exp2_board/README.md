@@ -1,16 +1,34 @@
 # exp2_board — 单周期 CPU 上板工程
 
-上板时把这 5 个文件加入工程，顶层设为 `cpu_top`：
+上板时把这 6 个文件加入工程，顶层设为 `cpu_top`：
 
 | 文件 | 作用 |
 | :--- | :--- |
 | `cpu_top.v` | 顶层：复位、时钟选择、单步消抖、存储器映射 I/O、数码管 |
 | `rv32is.v` | CPU，与 `../exp1_cpu/rv32is.v` 相同 |
-| `prog_rom.v` | 4 × 256 字指令 ROM，组合读 |
+| `prog_rom.v` | 4 × 256 字指令 ROM，同步读 |
 | `board_dmem.v` | 4KB 数据存储器 |
+| `prog.hex` | 指令 ROM 初始化文件，`make_rom.py` 生成 |
 | `cpu_top.xdc` | Nexys A7-100T 引脚约束 |
 
-不需要额外的数据文件，ROM 内容直接写在 `prog_rom.v` 的 `case` 里。
+## 指令 ROM 与 prog.hex
+
+`prog_rom.v` 是同步读的块 RAM，用 `$readmemh("prog.hex", mem)` 初始化：
+
+```verilog
+(* rom_style = "block" *) reg [31:0] mem [0:1023];
+initial $readmemh("prog.hex", mem);
+always @(posedge clk) dout <= mem[{prog, addr}];
+```
+
+4 段程序各占 256 字，`prog.hex` 用 `@000`、`@100`、`@200`、`@300`
+四个字地址分段，每段不足 256 字的部分补 `nop`，1024 个单元都有确定值。
+
+`$readmemh` 的相对路径按工具的工作目录解析，不是按源文件所在目录，所以：
+
+- 仿真：把 `prog.hex` 拷到 `工程名.sim/sim_1/behav/xsim/`。
+- 综合：在 Add Sources 里把 `prog.hex` 一并加入工程；如果综合日志提示
+  `File prog.hex ... cannot be opened`，再把它拷到 `工程名.runs/synth_1/`。
 
 ## 板上操作
 
@@ -31,11 +49,11 @@
 ## 修改程序
 
 汇编源码是 `prog_sum.S`、`prog_fib.S`、`prog_prime.S`、`prog_gcd.S`，
-由 `tools/rvasm.py` 汇编。改完后重新生成 `prog_rom.v`：
+由 `tools/rvasm.py` 汇编。改完后重新生成 `prog.hex`：
 
 ```bash
 cd lab09/exp2_board
-python3 make_rom.py --update prog_rom.v
+python3 make_rom.py
 ```
 
 `rv32is.v` 是 `../exp1_cpu/rv32is.v` 的副本，改 CPU 后两边要同步：
@@ -45,6 +63,8 @@ cp ../exp1_cpu/rv32is.v rv32is.v
 ```
 
 ## 仿真
+
+在 `exp2_board` 目录下运行，`prog.hex` 就在当前目录：
 
 ```bash
 docker run --rm -v "$PWD":/work -w /work iverilog:12 \

@@ -2,10 +2,12 @@
 //==============================================================================
 // cpu_top.v : lab09 单周期 RV32I CPU 上板顶层
 //
-// 上板文件: cpu_top.v + rv32is.v + prog_rom.v + board_dmem.v + cpu_top.xdc
+// 上板文件: cpu_top.v + rv32is.v + prog_rom.v + board_dmem.v + prog.hex
+//           + cpu_top.xdc
 //   rv32is.v     CPU (与 exp1_cpu/rv32is.v 相同)
-//   prog_rom.v   4 x 256 字指令 ROM, 数据由 make_rom.py 从 prog_*.S 生成
+//   prog_rom.v   4 x 256 字指令 ROM, 同步读, 由 prog.hex 初始化
 //   board_dmem.v 4KB 数据存储器
+//   prog.hex     由 make_rom.py 从 prog_*.S 生成
 //
 // 板上操作:
 //   SW[15:14]  选择程序: 00 累加和 1..n / 01 斐波那契 F(n)
@@ -23,9 +25,9 @@
 //   0x0000_2000          只读: {16'b0, 锁存的 SW[15:0]}
 //   0x0000_2004          只写: 结果寄存器，送数码管显示
 //
-// 指令 ROM 为组合读取，地址取 PC 而不是 NextPC。指令存储器若用同步
-// BRAM，上电后到第一次取指之间输出是未初始化的，PC 可能被错误指令带跑；
-// 组合 ROM 没有这个问题，慢速单步下时序也更容易满足。
+// 指令 ROM 是同步 BRAM, 用 100MHz 连续读 PC. 复位期间 PC 一直为 0,
+// BRAM 已经在读 0 地址, 第一次取指不会拿到未初始化的输出. 地址用 PC
+// 而不是 NextPC, 避免组合的 NextPC 在连续时钟下把取指地址越推越远.
 //==============================================================================
 module cpu_top #(
     parameter integer POR_BITS  = 19,   // 上电复位计数位宽
@@ -127,8 +129,9 @@ module cpu_top #(
         .dbgdata      (dbgdata)
     );
 
-    // 指令 ROM: 组合读, 地址用 PC(dbgdata) 的低 10 位
+    // 指令 ROM: 100MHz 连续读, 地址用 PC(dbgdata) 的低 10 位
     prog_rom u_rom (
+        .clk  (CLK100MHZ),
         .prog (prog_sel),
         .addr (dbgdata[9:2]),
         .dout (imemdataout)

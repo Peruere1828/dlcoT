@@ -8,4 +8,4 @@
 - `../rv32is_tb.v`：由 `cpu_step.v` 改写，出错时打印 MISMATCH，最后输出 TEST PASSED/FAILED。
 - `../cpu_batch_tb.v`：由 `cpu_batch.v` 改写，增加通过/失败计数和最终汇总。
 
-这两个文件不参与综合。上板只用 `../exp2_board/` 下的 `cpu_top.v`、`rv32is.v`、`prog_rom.v`、`board_dmem.v` 和 `cpu_top.xdc`。
+这两个文件不参与综合。上板只用 `../exp2_board/` 下的 `cpu_top.v`、`rv32is.v`、`prog_rom.v`、`board_dmem.v`、`prog.hex` 和 `cpu_top.xdc`。
