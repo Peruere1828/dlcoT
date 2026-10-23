@@ -1,8 +1,8 @@
 ## lab09 exp2_board 单周期 CPU 上板引脚 (Nexys A7-100T)
 ## 上板文件: cpu_top.v + rv32is.v + prog_rom.v + board_dmem.v + prog.hex + cpu_top.xdc
-## SW[15:14]=程序选择, SW[13]=1 自动运行/0 BTNC 单步, SW[7:4]=gcd 第二参数, SW[3:0]=n
+## SW[15:14]=程序选择, SW[13]=1 自动运行/0 BTNC 单步, SW[11:0]=n (0x000~0xFFF)
 ## CPU_RESETN=C12 低有效复位, BTNC=N17 单步, LED[15:0]=PC 低 16 位
-## AN[7:0]=位选, HEX[7:0]={seg[6:0],DP}=32 位结果
+## AN[7:0]=位选, HEX[7:0]={seg[6:0],DP}=十六进制结果
 
 ## 100MHz system clock
 set_property -dict { PACKAGE_PIN E3    IOSTANDARD LVCMOS33 } [get_ports { CLK100MHZ }];

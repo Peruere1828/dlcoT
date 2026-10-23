@@ -2,7 +2,7 @@
 
 // cpu_top_tb.v : lab09 上板顶层自检
 //   把上电复位/自动运行分频/数码管扫描分频都缩小, 逐个程序跑完并检查结果.
-//   期望值用公式即时计算, 与 CPU 的 RTL 实现无关.
+//   程序写二进制结果, 数码管按 8 位十六进制显示.
 
 module cpu_top_tb;
 
@@ -16,7 +16,7 @@ module cpu_top_tb;
 
     integer errors;
 
-    // 缩小各计数器, 让仿真在几十微秒内跑完
+    // 缩小各计数器, 让仿真在几百微秒内跑完
     cpu_top #(
         .POR_BITS (3),
         .DIV_BITS (2),
@@ -77,21 +77,13 @@ module cpu_top_tb;
         end
     endfunction
 
-    function integer gcd_sub;
-        input integer a;
-        input integer b;
+    function [31:0] f_leap;
+        input integer y;
         begin
-            if (a == 0)
-                gcd_sub = b;
-            else if (b == 0)
-                gcd_sub = a;
-            else begin
-                while (a != b) begin
-                    if (a > b) a = a - b;
-                    else       b = b - a;
-                end
-                gcd_sub = a;
-            end
+            if (((y % 4) == 0) && (((y % 100) != 0) || ((y % 400) == 0)))
+                f_leap = 1;
+            else
+                f_leap = 0;
         end
     endfunction
 
@@ -120,43 +112,44 @@ module cpu_top_tb;
     endfunction
 
     // 跑一个程序并检查
-    //   prog: SW[15:14], n: SW[3:0], m: SW[7:4]
-    //   exp : 期望的结果, exp_pc: 停机时 PC 低 16 位
+    //   prog: SW[15:14], n: SW[11:0]
+    //   exp : 期望的二进制结果, exp_pc: 停机时 PC 低 16 位
 
     task run_case;
         input [1:0]  prog;
-        input [3:0]  n;
-        input [3:0]  m;
+        input [11:0] n;
         input [31:0] exp;
         input [15:0] exp_pc;
         integer timeout;
+        integer k;
+        reg [3:0] exp_nib;
         begin
-            SW = {prog, 1'b1, 5'b0, m, n};
+            SW = {prog, 1'b1, 1'b0, n};   // SW[13]=1 自动运行, SW[12]=0
             CPU_RESETN = 1'b0;
             repeat (10) @(posedge CLK100MHZ);
             CPU_RESETN = 1'b1;
 
             // 等程序跑到停机指令 j hang, PC 会停在那里
             timeout = 0;
-            while ((uut.dbgdata[15:0] !== exp_pc) && (timeout < 20000)) begin
+            while ((uut.dbgdata[15:0] !== exp_pc) && (timeout < 200000)) begin
                 @(posedge CLK100MHZ);
                 timeout = timeout + 1;
             end
             #1;
 
-            if (timeout >= 20000) begin
-                $display("MISMATCH: prog=%0d n=%0d m=%0d 未停机, pc=0x%04h",
-                         prog, n, m, uut.dbgdata[15:0]);
+            if (timeout >= 200000) begin
+                $display("MISMATCH: prog=%0d n=%0d 未停机, pc=0x%04h",
+                         prog, n, uut.dbgdata[15:0]);
                 errors = errors + 1;
             end
 
             if (uut.result_reg !== exp) begin
-                $display("MISMATCH: prog=%0d n=%0d m=%0d result=0x%08h expected 0x%08h",
-                         prog, n, m, uut.result_reg, exp);
+                $display("MISMATCH: prog=%0d n=%0d result=0x%08h expected 0x%08h",
+                         prog, n, uut.result_reg, exp);
                 errors = errors + 1;
             end else begin
-                $display("ok: prog=%0d n=%0d m=%0d result=0x%08h pc=0x%04h",
-                         prog, n, m, uut.result_reg, uut.dbgdata[15:0]);
+                $display("ok: prog=%0d n=%0d result=0x%08h pc=0x%04h",
+                         prog, n, exp, uut.dbgdata[15:0]);
             end
 
             if (uut.dbgdata[15:0] !== exp_pc) begin
@@ -170,13 +163,16 @@ module cpu_top_tb;
                 errors = errors + 1;
             end
 
-            // 数码管最低位
-            while (uut.dig != 3'd0) @(posedge CLK100MHZ);
-            #1;
-            if (HEX !== {seg7(exp[3:0]), 1'b1}) begin
-                $display("MISMATCH: HEX=0x%02h expected 0x%02h (nibble 0x%h)",
-                         HEX, {seg7(exp[3:0]), 1'b1}, exp[3:0]);
-                errors = errors + 1;
+            // 8 位数码管逐位检查十六进制段码
+            for (k = 0; k < 8; k = k + 1) begin
+                while (uut.dig != k) @(posedge CLK100MHZ);
+                #1;
+                exp_nib = (exp >> (4 * k));
+                if (HEX !== {seg7(exp_nib), 1'b1}) begin
+                    $display("MISMATCH: HEX=0x%02h expected 0x%02h (digit %0d = 0x%h)",
+                             HEX, {seg7(exp_nib), 1'b1}, k, exp_nib);
+                    errors = errors + 1;
+                end
             end
         end
     endtask
@@ -190,26 +186,56 @@ module cpu_top_tb;
 
         #100;   // 等上电复位结束
 
-        // 程序 0: 累加和, 停机 PC = 4*(10-1) = 36
-        run_case(2'd0, 4'd0,  4'd0, f_sum(0),   16'd36);
-        run_case(2'd0, 4'd10, 4'd0, f_sum(10),  16'd36);
-        run_case(2'd0, 4'd15, 4'd0, f_sum(15),  16'd36);
+        // 程序 0: 累加和, 停机 PC = 40
+        run_case(2'd0, 12'd0,    f_sum(0),    16'd40);
+        run_case(2'd0, 12'd10,   f_sum(10),   16'd40);
+        run_case(2'd0, 12'd2024, f_sum(2024), 16'd40);
 
-        // 程序 1: 斐波那契, 停机 PC = 4*(13-1) = 48
-        run_case(2'd1, 4'd0,  4'd0, f_fib(0),   16'd48);
-        run_case(2'd1, 4'd1,  4'd0, f_fib(1),   16'd48);
-        run_case(2'd1, 4'd10, 4'd0, f_fib(10),  16'd48);
-        run_case(2'd1, 4'd15, 4'd0, f_fib(15),  16'd48);
+        // 程序 1: 斐波那契, 停机 PC = 52
+        run_case(2'd1, 12'd0,  f_fib(0),  16'd52);
+        run_case(2'd1, 12'd1,  f_fib(1),  16'd52);
+        run_case(2'd1, 12'd10, f_fib(10), 16'd52);
+        run_case(2'd1, 12'd20, f_fib(20), 16'd52);
+        run_case(2'd1, 12'd39, f_fib(39), 16'd52);
+        run_case(2'd1, 12'd46, f_fib(46), 16'd52);
 
-        // 程序 2: 素数判断, 停机 PC = 4*(18-1) = 68
-        run_case(2'd2, 4'd2,  4'd0, f_prime(2),  16'd68);
-        run_case(2'd2, 4'd4,  4'd0, f_prime(4),  16'd68);
-        run_case(2'd2, 4'd7,  4'd0, f_prime(7),  16'd68);
-        run_case(2'd2, 4'd15, 4'd0, f_prime(15), 16'd68);
+        // 程序 2: 闰年判断, 停机 PC = 68
+        run_case(2'd2, 12'd2024, f_leap(2024), 16'd68);
+        run_case(2'd2, 12'd1900, f_leap(1900), 16'd68);
+        run_case(2'd2, 12'd2000, f_leap(2000), 16'd68);
+        run_case(2'd2, 12'd2023, f_leap(2023), 16'd68);
+        run_case(2'd2, 12'd400,  f_leap(400),  16'd68);
 
-        // 程序 3: 最大公约数, 停机 PC = 4*(17-1) = 64
-        run_case(2'd3, 4'd12, 4'd8, gcd_sub(12, 8), 16'd64);
-        run_case(2'd3, 4'd0,  4'd9, gcd_sub(0, 9),  16'd64);
+        // 程序 3: 素数判断, 停机 PC = 72
+        run_case(2'd3, 12'd0,  f_prime(0),  16'd72);
+        run_case(2'd3, 12'd1,  f_prime(1),  16'd72);
+        run_case(2'd3, 12'd2,  f_prime(2),  16'd72);
+        run_case(2'd3, 12'd4,  f_prime(4),  16'd72);
+        run_case(2'd3, 12'd7,  f_prime(7),  16'd72);
+        run_case(2'd3, 12'd15, f_prime(15), 16'd72);
+        run_case(2'd3, 12'd97, f_prime(97), 16'd72);
+
+        // 单步模式下按复位也应清 PC 和结果寄存器
+        SW = {2'd0, 1'b0, 1'b0, 12'd0};   // 程序 0, 单步, n=0
+        CPU_RESETN = 1'b0;
+        repeat (10) @(posedge CLK100MHZ);
+        CPU_RESETN = 1'b1;
+        repeat (10) @(posedge CLK100MHZ);
+        #1;
+        if (uut.dbgdata[15:0] !== 16'd0) begin
+            $display("MISMATCH: reset pc=0x%04h", uut.dbgdata[15:0]);
+            errors = errors + 1;
+        end
+        if (uut.result_reg !== 32'd0) begin
+            $display("MISMATCH: reset result=0x%08h", uut.result_reg);
+            errors = errors + 1;
+        end
+        while (uut.dig != 3'd0) @(posedge CLK100MHZ);
+        #1;
+        if (HEX !== {seg7(4'd0), 1'b1}) begin
+            $display("MISMATCH: reset HEX=0x%02h", HEX);
+            errors = errors + 1;
+        end
 
         $display("simulation time: %0t (%0d ns)", $time, $time);
         if (errors == 0)

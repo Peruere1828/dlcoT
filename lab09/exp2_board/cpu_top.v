@@ -11,19 +11,19 @@
 //
 // 板上操作:
 //   SW[15:14]  选择程序: 00 累加和 1..n / 01 斐波那契 F(n)
-//                        10 素数判断 / 11 gcd(n, m)
-//   SW[13]     1 = 自动运行（约 12Hz），0 = BTNC 单步
-//   SW[7:4]    第二个参数 m（仅 gcd 使用）
-//   SW[3:0]    参数 n
+//                        10 闰年判断 / 11 素数判断
+//   SW[13]     1 = 自动运行（约 780kHz），0 = BTNC 单步
+//   SW[11:0]   参数 n（3 位十六进制，0x000~0xFFF）
+//   SW[12]     未使用
 //   开关在复位期间被锁存；改参数或换程序后按一下 CPU_RESETN
 //   CPU_RESETN 低有效复位；BTNC 单步执行一条指令
 //   LED[15:0]  显示当前 PC 的低 16 位
-//   AN/HEX     8 位数码管以十六进制显示结果
+//   AN/HEX     8 位数码管以十六进制显示 32 位结果
 //
 // 存储器映射（CPU 的数据地址）:
 //   0x0000_0000 起 4KB   数据 RAM
 //   0x0000_2000          只读: {16'b0, 锁存的 SW[15:0]}
-//   0x0000_2004          只写: 结果寄存器，送数码管显示
+//   0x0000_2004          只写: 结果寄存器（二进制），送数码管以十六进制显示
 //
 // 指令 ROM 是同步 BRAM, 用 100MHz 连续读 PC. 复位期间 PC 一直为 0,
 // BRAM 已经在读 0 地址, 第一次取指不会拿到未初始化的输出. 地址用 PC
@@ -31,7 +31,7 @@
 
 module cpu_top #(
     parameter integer POR_BITS  = 19,   // 上电复位计数位宽
-    parameter integer DIV_BITS  = 23,   // 自动运行分频, 2^23 * 10ns ≈ 84ms
+    parameter integer DIV_BITS  = 7,    // 自动运行分频, 2^7 * 10ns ≈ 1.28us
     parameter integer DB_BITS   = 17,   // BTNC 消抖计数位宽
     parameter integer SCAN_BITS = 15    // 数码管扫描分频
 ) (
@@ -52,7 +52,24 @@ module cpu_top #(
         if (!por_cnt[POR_BITS-1])
             por_cnt <= por_cnt + 1'b1;
 
-    wire reset = (~CPU_RESETN) | (~por_cnt[POR_BITS-1]);
+    wire reset_raw = (~CPU_RESETN) | (~por_cnt[POR_BITS-1]);
+
+    // 同步复位, 并在复位开始时产生一个 10ns 的 CPU 复位脉冲.
+    // 单步模式下 CPU 本身没有时钟沿, 必须靠这个脉冲把 PC 和结果寄存器清 0.
+    reg reset_meta, reset_sync, reset_d;
+    initial begin
+        reset_meta = 1'b0;
+        reset_sync = 1'b0;
+        reset_d    = 1'b0;
+    end
+    always @(posedge CLK100MHZ) begin
+        reset_meta <= reset_raw;
+        reset_sync <= reset_meta;
+        reset_d    <= reset_sync;
+    end
+
+    wire reset       = reset_sync;
+    wire reset_pulse = reset & ~reset_d;
 
     reg [15:0] sw_r;
     initial sw_r = 16'b0;
@@ -98,7 +115,9 @@ module cpu_top #(
     wire auto_pulse = &div_cnt;
 
     // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回
-    wire cpu_clk = sw_r[13] ? auto_pulse : step_pulse;
+    // 复位时改用 reset_pulse, 这样单步模式下按复位也能清 PC
+    wire run_pulse = sw_r[13] ? auto_pulse : step_pulse;
+    wire cpu_clk   = reset ? reset_pulse : run_pulse;
 
     // CPU 与存储器
 
@@ -145,7 +164,7 @@ module cpu_top #(
 
     wire [31:0] ram_dataout;
 
-    // 结果寄存器: 程序用 sw 指令写到 0x2004
+    // 结果寄存器: 程序用 sw 指令写到 0x2004, 内容是二进制结果
     reg [31:0] result_reg;
     initial result_reg = 32'b0;
     always @(posedge dmemwrclk) begin
@@ -177,6 +196,8 @@ module cpu_top #(
         scan_cnt <= scan_cnt + 1'b1;
 
     wire [2:0] dig = scan_cnt[SCAN_BITS+2:SCAN_BITS];
+
+    // 当前位的十六进制数字
 
     reg [3:0] nib;
     always @(*) begin
