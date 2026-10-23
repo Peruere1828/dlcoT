@@ -1,8 +1,7 @@
 `timescale 1ns / 1ps
-//==============================================================================
+
 // board_dmem.v : 上板数据存储器, 4KB
 // 读时钟上升沿读整字, 写时钟上升沿按 memop 改写对应字节/半字
-//==============================================================================
 
 module board_dmem(
     input  wire [31:0] addr,
@@ -14,10 +13,23 @@ module board_dmem(
     output wire [31:0] dataout
 );
 
-    reg [31:0] mem [0:1023];
+    // memop 编码与 load/store 的 funct3 相同
+    localparam [2:0] MEM_BYTE   = 3'b000,
+                     MEM_HALF   = 3'b001,
+                     MEM_WORD   = 3'b010,
+                     MEM_BYTE_U = 3'b100,
+                     MEM_HALF_U = 3'b101;
+
+    // 地址最低两位, 即字节在字内的位置
+    localparam [1:0] OFF_B0 = 2'd0,
+                     OFF_B1 = 2'd1,
+                     OFF_B2 = 2'd2;
+
+    localparam integer MEM_WORDS = 1024;   // 4KB / 4B
+    reg [31:0] mem [0:MEM_WORDS-1];
     integer i;
     initial begin
-        for (i = 0; i < 1024; i = i + 1)
+        for (i = 0; i < MEM_WORDS; i = i + 1)
             mem[i] = 32'b0;
     end
 
@@ -31,19 +43,19 @@ module board_dmem(
     reg [31:0] rdata;
     always @(*) begin
         case (memop)
-            3'b010:  rdata = rdword;
-            3'b001:  rdata = off[1] ? {{16{rdword[31]}}, rdword[31:16]}
-                                    : {{16{rdword[15]}}, rdword[15:0]};
-            3'b101:  rdata = off[1] ? {16'b0, rdword[31:16]}
-                                    : {16'b0, rdword[15:0]};
-            3'b000:  rdata = (off == 2'b00) ? {{24{rdword[7]}},  rdword[7:0]}
-                            : (off == 2'b01) ? {{24{rdword[15]}}, rdword[15:8]}
-                            : (off == 2'b10) ? {{24{rdword[23]}}, rdword[23:16]}
-                                             : {{24{rdword[31]}}, rdword[31:24]};
-            3'b100:  rdata = (off == 2'b00) ? {24'b0, rdword[7:0]}
-                            : (off == 2'b01) ? {24'b0, rdword[15:8]}
-                            : (off == 2'b10) ? {24'b0, rdword[23:16]}
-                                             : {24'b0, rdword[31:24]};
+            MEM_WORD:   rdata = rdword;
+            MEM_HALF:   rdata = off[1] ? {{16{rdword[31]}}, rdword[31:16]}
+                                      : {{16{rdword[15]}}, rdword[15:0]};
+            MEM_HALF_U: rdata = off[1] ? {16'b0, rdword[31:16]}
+                                      : {16'b0, rdword[15:0]};
+            MEM_BYTE:   rdata = (off == OFF_B0) ? {{24{rdword[7]}},  rdword[7:0]}
+                              : (off == OFF_B1) ? {{24{rdword[15]}}, rdword[15:8]}
+                              : (off == OFF_B2) ? {{24{rdword[23]}}, rdword[23:16]}
+                                                : {{24{rdword[31]}}, rdword[31:24]};
+            MEM_BYTE_U: rdata = (off == OFF_B0) ? {24'b0, rdword[7:0]}
+                              : (off == OFF_B1) ? {24'b0, rdword[15:8]}
+                              : (off == OFF_B2) ? {24'b0, rdword[23:16]}
+                                                : {24'b0, rdword[31:24]};
             default: rdata = rdword;
         endcase
     end
@@ -53,14 +65,14 @@ module board_dmem(
     reg [31:0] wdata;
     always @(*) begin
         case (memop)
-            3'b010:  wdata = datain;
-            3'b001, 3'b101:
+            MEM_WORD:   wdata = datain;
+            MEM_HALF, MEM_HALF_U:
                 wdata = off[1] ? {datain[15:0], rdword[15:0]}
                                : {rdword[31:16], datain[15:0]};
-            3'b000, 3'b100:
-                wdata = (off == 2'b00) ? {rdword[31:8],   datain[7:0]}
-                      : (off == 2'b01) ? {rdword[31:16],  datain[7:0], rdword[7:0]}
-                      : (off == 2'b10) ? {rdword[31:24],  datain[7:0], rdword[15:0]}
+            MEM_BYTE, MEM_BYTE_U:
+                wdata = (off == OFF_B0) ? {rdword[31:8],   datain[7:0]}
+                      : (off == OFF_B1) ? {rdword[31:16],  datain[7:0], rdword[7:0]}
+                      : (off == OFF_B2) ? {rdword[31:24],  datain[7:0], rdword[15:0]}
                                        : {datain[7:0],    rdword[23:0]};
             default: wdata = datain;
         endcase

@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-//==============================================================================
+
 // cpu_top.v : lab09 单周期 RV32I CPU 上板顶层
 //
 // 上板文件: cpu_top.v + rv32is.v + prog_rom.v + board_dmem.v + prog.hex
@@ -28,7 +28,7 @@
 // 指令 ROM 是同步 BRAM, 用 100MHz 连续读 PC. 复位期间 PC 一直为 0,
 // BRAM 已经在读 0 地址, 第一次取指不会拿到未初始化的输出. 地址用 PC
 // 而不是 NextPC, 避免组合的 NextPC 在连续时钟下把取指地址越推越远.
-//==============================================================================
+
 module cpu_top #(
     parameter integer POR_BITS  = 19,   // 上电复位计数位宽
     parameter integer DIV_BITS  = 23,   // 自动运行分频, 2^23 * 10ns ≈ 84ms
@@ -44,9 +44,8 @@ module cpu_top #(
     output wire [15:0] LED
 );
 
-    //--------------------------------------------------------------------------
     // 复位: 上电复位 + 按键复位, 复位期间锁存开关
-    //--------------------------------------------------------------------------
+
     reg [POR_BITS-1:0] por_cnt;
     initial por_cnt = {POR_BITS{1'b0}};
     always @(posedge CLK100MHZ)
@@ -63,9 +62,8 @@ module cpu_top #(
 
     wire [1:0] prog_sel = sw_r[15:14];
 
-    //--------------------------------------------------------------------------
     // BTNC 消抖与单步脉冲
-    //--------------------------------------------------------------------------
+
     reg [DB_BITS-1:0] db_cnt;
     reg btn_sync, btn_clean, btn_clean_d;
     initial begin
@@ -90,9 +88,8 @@ module cpu_top #(
 
     wire step_pulse = btn_clean & ~btn_clean_d;   // 按下一次, 一个时钟周期
 
-    //--------------------------------------------------------------------------
     // 自动运行的慢速节拍
-    //--------------------------------------------------------------------------
+
     reg [DIV_BITS-1:0] div_cnt;
     initial div_cnt = {DIV_BITS{1'b0}};
     always @(posedge CLK100MHZ)
@@ -103,9 +100,8 @@ module cpu_top #(
     // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回
     wire cpu_clk = sw_r[13] ? auto_pulse : step_pulse;
 
-    //--------------------------------------------------------------------------
     // CPU 与存储器
-    //--------------------------------------------------------------------------
+
     wire [31:0] imemaddr, imemdataout;
     wire        imemclk;
     wire [31:0] dmemaddr, dmemdataout, dmemdatain;
@@ -137,12 +133,15 @@ module cpu_top #(
         .dout (imemdataout)
     );
 
-    //--------------------------------------------------------------------------
     // 数据存储器与存储器映射 I/O
-    //--------------------------------------------------------------------------
-    wire io_hit = (dmemaddr[31:12] == 20'h00002);   // 0x0000_2000 ~ 0x0000_2FFF
-    wire io_sw  = (dmemaddr == 32'h0000_2000);
-    wire io_res = (dmemaddr == 32'h0000_2004);
+
+    localparam [31:0] IO_BASE   = 32'h0000_2000;         // I/O 页起始地址
+    localparam [31:0] IO_SW     = IO_BASE;               // 只读: 锁存的开关
+    localparam [31:0] IO_RESULT = IO_BASE + 32'd4;       // 只写: 结果寄存器
+
+    wire io_hit = (dmemaddr[31:12] == IO_BASE[31:12]);   // 0x2000 ~ 0x2FFF
+    wire io_sw  = (dmemaddr == IO_SW);
+    wire io_res = (dmemaddr == IO_RESULT);
 
     wire [31:0] ram_dataout;
 
@@ -170,9 +169,8 @@ module cpu_top #(
                          io_res ? result_reg   :
                                   ram_dataout;
 
-    //--------------------------------------------------------------------------
     // 数码管动态扫描
-    //--------------------------------------------------------------------------
+
     reg [SCAN_BITS+2:0] scan_cnt;
     initial scan_cnt = {(SCAN_BITS+3){1'b0}};
     always @(posedge CLK100MHZ)
@@ -181,41 +179,60 @@ module cpu_top #(
     wire [2:0] dig = scan_cnt[SCAN_BITS+2:SCAN_BITS];
 
     reg [3:0] nib;
-    reg [7:0] an;
     always @(*) begin
         case (dig)
-            3'd0: begin nib = result_reg[3:0];   an = 8'b1111_1110; end
-            3'd1: begin nib = result_reg[7:4];   an = 8'b1111_1101; end
-            3'd2: begin nib = result_reg[11:8];  an = 8'b1111_1011; end
-            3'd3: begin nib = result_reg[15:12]; an = 8'b1111_0111; end
-            3'd4: begin nib = result_reg[19:16]; an = 8'b1110_1111; end
-            3'd5: begin nib = result_reg[23:20]; an = 8'b1101_1111; end
-            3'd6: begin nib = result_reg[27:24]; an = 8'b1011_1111; end
-            default: begin nib = result_reg[31:28]; an = 8'b0111_1111; end
+            3'd0:    nib = result_reg[3:0];
+            3'd1:    nib = result_reg[7:4];
+            3'd2:    nib = result_reg[11:8];
+            3'd3:    nib = result_reg[15:12];
+            3'd4:    nib = result_reg[19:16];
+            3'd5:    nib = result_reg[23:20];
+            3'd6:    nib = result_reg[27:24];
+            default: nib = result_reg[31:28];
         endcase
     end
 
+    // AN[n] = 0 选中第 n 位数码管
+    wire [7:0] an = ~(8'b0000_0001 << dig);
+
     // 共阳极段码 seg[6:0] = {G,F,E,D,C,B,A}, 低电平点亮
+    localparam [6:0] SEG_0 = 7'b1000000,
+                     SEG_1 = 7'b1111001,
+                     SEG_2 = 7'b0100100,
+                     SEG_3 = 7'b0110000,
+                     SEG_4 = 7'b0011001,
+                     SEG_5 = 7'b0010010,
+                     SEG_6 = 7'b0000010,
+                     SEG_7 = 7'b1111000,
+                     SEG_8 = 7'b0000000,
+                     SEG_9 = 7'b0010000,
+                     SEG_A = 7'b0001000,
+                     SEG_B = 7'b0000011,
+                     SEG_C = 7'b1000110,
+                     SEG_D = 7'b0100001,
+                     SEG_E = 7'b0000110,
+                     SEG_F = 7'b0001110;
+
     function [6:0] seg7;
         input [3:0] d;
         begin
             case (d)
-                4'h0:    seg7 = 7'b1000000;
-                4'h1:    seg7 = 7'b1111001;
-                4'h2:    seg7 = 7'b0100100;
-                4'h3:    seg7 = 7'b0110000;
-                4'h4:    seg7 = 7'b0011001;
-                4'h5:    seg7 = 7'b0010010;
-                4'h6:    seg7 = 7'b0000010;
-                4'h7:    seg7 = 7'b1111000;
-                4'h8:    seg7 = 7'b0000000;
-                4'h9:    seg7 = 7'b0010000;
-                4'hA:    seg7 = 7'b0001000;
-                4'hB:    seg7 = 7'b0000011;
-                4'hC:    seg7 = 7'b1000110;
-                4'hD:    seg7 = 7'b0100001;
-                4'hE:    seg7 = 7'b0000110;
-                default: seg7 = 7'b0001110;
+                4'h0:    seg7 = SEG_0;
+                4'h1:    seg7 = SEG_1;
+                4'h2:    seg7 = SEG_2;
+                4'h3:    seg7 = SEG_3;
+                4'h4:    seg7 = SEG_4;
+                4'h5:    seg7 = SEG_5;
+                4'h6:    seg7 = SEG_6;
+                4'h7:    seg7 = SEG_7;
+                4'h8:    seg7 = SEG_8;
+                4'h9:    seg7 = SEG_9;
+                4'hA:    seg7 = SEG_A;
+                4'hB:    seg7 = SEG_B;
+                4'hC:    seg7 = SEG_C;
+                4'hD:    seg7 = SEG_D;
+                4'hE:    seg7 = SEG_E;
+                default: seg7 = SEG_F;
             endcase
         end
     endfunction

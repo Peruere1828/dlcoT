@@ -42,52 +42,54 @@ assign immB = {{20{instr[31]}}, instr[7], instr[30:25], instr[11:8], 1'b0};
 assign immJ = {{12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0};
 ```
 
-控制信号 `ExtOP` 为 3 位，按 000 到 100 分别选择 I、U、S、B、J 型立即数，再用一个多路选择器把选中的立即数送到 ALU 的 B 输入端和 PC 加法器。
+控制信号 `extop` 取值 `EXT_I`、`EXT_U`、`EXT_S`、`EXT_B`、`EXT_J`，分别选择 I、U、S、B、J 型立即数，再用一个多路选择器把选中的立即数送到 ALU 的 B 输入端和 PC 加法器。
 
 ### 2.2 控制通路
 
-控制信号生成模块以 `op`、`func3`、`func7[5]` 为输入，产生 `ExtOP`、`RegWr`、`ALUAsrc`、`ALUBsrc`、`ALUctr`、`Branch`、`MemtoReg`、`MemWr`、`MemOP` 九组信号。各指令对应的取值来自实验指导的表 9.10 和表 9.11。
+控制信号生成模块以 `op`、`func3`、`func7_5` 为输入，产生 `extop`、`regwr`、`alu_a_src`、`alu_b_src`、`aluctr`、`branch`、`memtoreg`、`memwr`、`memop` 九组信号，各指令对应的取值来自实验指导的表 9.10 和表 9.11。指令编码、ALU 操作和跳转类型都用 `localparam` 命名，代码里不再出现裸的二进制控制字。
 
-`ALUctr` 的低 3 位选择运算，最高位作为辅助位：
+`aluctr` 是一个 4 位枚举：
 
-| ALUctr[3] | ALUctr[2:0] | 操作 |
-| :---: | :---: | :--- |
-| 0 | 000 | 加法 |
-| 1 | 000 | 减法 |
-| × | 001 | 逻辑左移 |
-| 0 | 010 | 带符号小于，结果置 0 或 1 |
-| 1 | 010 | 无符号小于，结果置 0 或 1 |
-| × | 011 | 直接输出 B，用于 `lui` |
-| × | 100 | 异或 |
-| 0 | 101 | 逻辑右移 |
-| 1 | 101 | 算术右移 |
-| × | 110 | 或 |
-| × | 111 | 与 |
+| ALU 控制 | 编码 | 操作 |
+| :--- | :---: | :--- |
+| `ALU_ADD` | 0000 | 加法 |
+| `ALU_SUB` | 1000 | 减法 |
+| `ALU_SLL` | 0001 | 逻辑左移 |
+| `ALU_SLT` | 0010 | 带符号小于，结果置 0 或 1 |
+| `ALU_SLTU` | 1010 | 无符号小于，结果置 0 或 1 |
+| `ALU_XOR` | 0100 | 异或 |
+| `ALU_SRL` | 0101 | 逻辑右移 |
+| `ALU_SRA` | 1101 | 算术右移 |
+| `ALU_OR` | 0110 | 或 |
+| `ALU_AND` | 0111 | 与 |
+| `ALU_LUI` | 0011 | 直接输出 B，用于 `lui` |
+
+最高位是辅助位：加法和减法、带符号和无符号小于、逻辑右移和算术右移分别共用低 3 位，靠最高位区分。
 
 组合逻辑的每个 `case` 都写了 `default`，每个 `if` 都有 `else`，默认值在 `always` 块开头统一赋值，避免推断出锁存器。
 
 ### 2.3 数据通路与跳转控制
 
-数据通路以寄存器堆、ALU、数据存储器为核心。ALU 的 A 输入由 `ALUAsrc` 在 `rs1` 和 `PC` 之间选择，B 输入由 `ALUBsrc` 在 `rs2`、立即数和常数 4 之间选择。写回数据由 `MemtoReg` 在 ALU 结果和存储器读出数据之间选择。
+数据通路以寄存器堆、ALU、数据存储器为核心。ALU 的 A 输入由 `alu_a_src` 在 `rs1` 和 `PC` 之间选择，B 输入由 `alu_b_src` 在 `rs2`、立即数和常数 4 之间选择。写回数据由 `memtoreg` 在 ALU 结果和存储器读出数据之间选择。
 
-条件分支不另外做比较器，而是复用 ALU：`beq`、`bne`、`blt`、`bge` 令 `ALUctr` 为 0010，`bltu`、`bgeu` 令 `ALUctr` 为 1010。`zero` 在比较运算时表示两操作数相等，`less` 按 `ALUctr[3]` 选择带符号或无符号小于。
+条件分支不另外做比较器，而是复用 ALU：`beq`、`bne`、`blt`、`bge` 令 `aluctr` 为 `ALU_SLT`，`bltu`、`bgeu` 令 `aluctr` 为 `ALU_SLTU`。`alu_zero` 在比较运算时表示两操作数相等，`alu_less` 在 `ALU_SLTU` 时取无符号小于，否则取带符号小于。
 
-NextPC 由专用加法器和跳转控制模块产生。`PCAsc` 选择加法器 A 端是常数 4 还是立即数，`PCBsrc` 选择 B 端是 PC 还是 `rs1`：
+NextPC 由三条加法路径产生：`pc_plus4 = pc + 4`、`pc_plus_imm = pc + imm`、`rs1_imm = rs1 + imm`，再由跳转类型选择：
 
-| Branch | 含义 | 跳转条件 | NextPC |
-| :---: | :--- | :--- | :--- |
-| 000 | 非跳转 | — | PC+4 |
-| 001 | `jal` | 无条件 | PC+imm |
-| 010 | `jalr` | 无条件 | rs1+imm，最低位清零 |
-| 100 | `beq` | zero | 成立 PC+imm，否则 PC+4 |
-| 101 | `bne` | !zero | 成立 PC+imm，否则 PC+4 |
-| 110 | `blt`、`bltu` | less | 成立 PC+imm，否则 PC+4 |
-| 111 | `bge`、`bgeu` | !less | 成立 PC+imm，否则 PC+4 |
+| Branch | 编码 | 含义 | 跳转条件 | NextPC |
+| :--- | :---: | :--- | :--- | :--- |
+| `BR_NONE` | 000 | 非跳转 | — | PC+4 |
+| `BR_JAL` | 001 | `jal` | 无条件 | PC+imm |
+| `BR_JALR` | 010 | `jalr` | 无条件 | rs1+imm，最低位清零 |
+| `BR_BEQ` | 100 | `beq` | zero | 成立 PC+imm，否则 PC+4 |
+| `BR_BNE` | 101 | `bne` | !zero | 成立 PC+imm，否则 PC+4 |
+| `BR_LT` | 110 | `blt`、`bltu` | less | 成立 PC+imm，否则 PC+4 |
+| `BR_GE` | 111 | `bge`、`bgeu` | !less | 成立 PC+imm，否则 PC+4 |
 
 `jalr` 的目标地址要与 `0xfffffffe` 相与，清掉最低位：
 
 ```verilog
-3'b010: nextpc = {rs1_imm[31:1], 1'b0};
+BR_JALR: nextpc = {rs1_imm[31:1], 1'b0};
 ```
 
 ### 2.4 单周期时序

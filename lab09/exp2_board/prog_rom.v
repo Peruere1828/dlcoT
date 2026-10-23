@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-//==============================================================================
+
 // prog_rom.v : 上板指令 ROM, 4 x 256 字, 同步读
 //
 // 内容来自 prog.hex, 由 make_rom.py 从 prog_*.S 生成:
@@ -10,7 +10,7 @@
 // 读时钟用 100MHz 而不是 CPU 的步进时钟: 复位期间 PC 一直是 0,
 // ROM 已经在连续读 0 地址, 第一次取指不会拿到未初始化数据;
 // CPU 进入一步之后, 下一个 100MHz 沿就能把新 PC 的指令读出来.
-//==============================================================================
+
 module prog_rom(
     input  wire        clk,      // 100MHz, 连续读
     input  wire [1:0]  prog,     // 程序选择 SW[15:14]
@@ -18,7 +18,8 @@ module prog_rom(
     output reg  [31:0] dout
 );
 
-    (* rom_style = "block" *) reg [31:0] mem [0:1023];
+    localparam integer ROM_WORDS = 1024;   // 4 段 x 256 字
+    (* rom_style = "block" *) reg [31:0] mem [0:ROM_WORDS-1];
 
     initial begin
         $readmemh("prog.hex", mem);
