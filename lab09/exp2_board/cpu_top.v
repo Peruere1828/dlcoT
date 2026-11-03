@@ -114,10 +114,25 @@ module cpu_top #(
 
     wire auto_pulse = &div_cnt;
 
-    // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回
-    // 复位时改用 reset_pulse, 这样单步模式下按复位也能清 PC
-    wire run_pulse = sw_r[13] ? auto_pulse : step_pulse;
-    wire cpu_clk   = reset ? reset_pulse : run_pulse;
+    // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回.
+    // 复位时改用 reset_pulse, 这样单步模式下按复位也能清 PC.
+    //
+    // 脉冲经过 BUFG 送到全局时钟网: 脉宽仍是 10ns, 时钟树从 BUFG 开始,
+    // 不再是 LUT 直接驱动时钟脚. 周期 1.28us 在 XDC 里按生成时钟声明.
+    wire run_pulse   = sw_r[13] ? auto_pulse : step_pulse;
+    wire clk_pulse   = reset ? reset_pulse : run_pulse;
+
+    wire cpu_clk;
+
+`ifdef __ICARUS__
+    // iverilog 没有 Xilinx 原语, 直接透传
+    assign cpu_clk = clk_pulse;
+`else
+    BUFG u_bufg_cpu (
+        .I (clk_pulse),
+        .O (cpu_clk)
+    );
+`endif
 
     // CPU 与存储器
 
@@ -144,11 +159,13 @@ module cpu_top #(
         .dbgdata      (dbgdata)
     );
 
-    // 指令 ROM: 100MHz 连续读, 地址用 PC(dbgdata) 的低 10 位
+    // 指令 ROM: 与 CPU 共用 cpu_clk, 在下降沿按 NextPC 取指
+    // (实验指导 9.2.4 的方案: 存储器在下降沿读, 而 PC 的输出要等这个沿之后
+    //  才更新, 所以地址必须用 PC 的输入 NextPC)
     prog_rom u_rom (
-        .clk  (CLK100MHZ),
+        .clk  (cpu_clk),
         .prog (prog_sel),
-        .addr (dbgdata[9:2]),
+        .addr (imemaddr[9:2]),
         .dout (imemdataout)
     );
 
@@ -165,20 +182,23 @@ module cpu_top #(
     wire [31:0] ram_dataout;
 
     // 结果寄存器: 程序用 sw 指令写到 0x2004, 内容是二进制结果
+    // 写入时刻与 CPU 的下降沿对齐, 和存储器写在同一个沿上
     reg [31:0] result_reg;
     initial result_reg = 32'b0;
-    always @(posedge dmemwrclk) begin
+    always @(negedge cpu_clk) begin
         if (reset)
             result_reg <= 32'b0;
         else if (dmemwe && io_res)
             result_reg <= dmemdatain;
     end
 
+    // 数据存储器直接接 cpu_clk: 读在上升沿, 写在下降沿, 内部各自取一个沿,
+    // 这样就不需要在顶层再反相出一个时钟网
     board_dmem u_dmem (
         .addr    (dmemaddr),
         .datain  (dmemdatain),
-        .rdclk   (dmemrdclk),
-        .wrclk   (dmemwrclk),
+        .rdclk   (cpu_clk),
+        .wrclk   (cpu_clk),
         .memop   (dmemop),
         .we      (dmemwe & ~io_hit),
         .dataout (ram_dataout)

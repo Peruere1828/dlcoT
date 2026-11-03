@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 
 // board_dmem.v : 上板数据存储器, 4KB
-// 读时钟上升沿读整字, 写时钟上升沿按 memop 改写对应字节/半字
+// 读在 rdclk 的上升沿读整字, 写在 wrclk 的下降沿按 memop 改写对应字节/半字
+// 两个端口都接 CPU 时钟: 上升沿先读出旧字, 下降沿再用它拼出按字节/半字写入的新字
 
 module board_dmem(
     input  wire [31:0] addr,
@@ -78,7 +79,7 @@ module board_dmem(
         endcase
     end
 
-    always @(posedge wrclk)
+    always @(negedge wrclk)
         if (we)
             mem[idx] <= wdata;
 

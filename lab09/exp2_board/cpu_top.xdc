@@ -7,6 +7,20 @@
 ## 100MHz system clock
 set_property -dict { PACKAGE_PIN E3    IOSTANDARD LVCMOS33 } [get_ports { CLK100MHZ }];
 create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports { CLK100MHZ }];
+
+## CPU 步进时钟: 由 100MHz 逻辑产生, 10ns 高电平, 周期 1.28us
+## create_generated_clock 没有 -period, 周期由 -edges 相对主时钟给出:
+##   边沿 1   = 0ns    上升
+##   边沿 3   = 10ns   下降
+##   边沿 257 = 1280ns 下一个上升
+create_generated_clock -name cpu_clk -source [get_ports { CLK100MHZ }] \
+    -edges {1 3 257} [get_pins { u_bufg_cpu/O }]
+
+## CPU 时钟与 100MHz 之间是准静态交换: 开关在复位期间锁存, 结果寄存器只在
+## 两次 CPU 步进之间被扫描显示读到. 标明异步, 避免按 10ns 强行检查这些路径
+set_clock_groups -asynchronous \
+    -group [get_clocks sys_clk_pin] \
+    -group [get_clocks cpu_clk]
 set_property CFGBVS VCCO [current_design]
 set_property CONFIG_VOLTAGE 3.3 [current_design]
 
