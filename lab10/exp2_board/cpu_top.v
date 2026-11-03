@@ -29,12 +29,10 @@
 // 下降沿更新 PC 和四个段寄存器. 单步时一个 BTNC 脉冲正好是一个完整周期,
 // 所以每按一次流水线前进一段, 可以看到 PC 和结果一步步变化.
 //
-// 指令 ROM 是同步 BRAM, 用 100MHz 连续读 PC. 复位期间 PC 一直为 0,
-// BRAM 已经在读 0 地址, 第一次取指不会拿到未初始化的输出. 地址用 PC
-// 而不是跳转目标, 避免组合的下一 PC 在连续时钟下把取指地址越推越远.
-// 流水线的取指在周期中间的上升沿完成, 而 ROM 每个 100MHz 周期都在读,
-// PC 一变下一个 10ns 沿就能把新地址的指令读出来, 所以 ROM 不需要用
-// CPU 的步进时钟.
+// 指令 ROM、数据存储器和 CPU 共用同一个 cpu_clk. 复位期间 PC 一直为 0,
+// 复位脉冲的那个上升沿就把 0 地址的指令读出来了, 第一次取指不会拿到
+// 未初始化的输出. ROM 的地址用 PC, 这个值在上一个下降沿就已经稳定,
+// 上升沿读出后由下降沿的 IF/ID 采样, 不需要第二个时钟域.
 
 module cpu_top #(
     parameter integer POR_BITS  = 19,   // 上电复位计数位宽
@@ -121,10 +119,25 @@ module cpu_top #(
 
     wire auto_pulse = &div_cnt;
 
-    // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回
-    // 复位时改用 reset_pulse, 这样单步模式下按复位也能清 PC
-    wire run_pulse = sw_r[13] ? auto_pulse : step_pulse;
-    wire cpu_clk   = reset ? reset_pulse : run_pulse;
+    // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回.
+    // 复位时改用 reset_pulse, 这样单步模式下按复位也能清 PC.
+    //
+    // 脉冲经过 BUFG 送到全局时钟网: 脉宽仍是 10ns, 时钟树从 BUFG 开始,
+    // 不再是 LUT 直接驱动时钟脚. 周期 1.28us 在 XDC 里按生成时钟声明.
+    wire run_pulse   = sw_r[13] ? auto_pulse : step_pulse;
+    wire clk_pulse   = reset ? reset_pulse : run_pulse;
+
+    wire cpu_clk;
+
+`ifdef __ICARUS__
+    // iverilog 没有 Xilinx 原语, 直接透传
+    assign cpu_clk = clk_pulse;
+`else
+    BUFG u_bufg_cpu (
+        .I (clk_pulse),
+        .O (cpu_clk)
+    );
+`endif
 
     // 周期计数: 数码管可以显示到目前为止执行了多少个 CPU 周期
 
@@ -162,9 +175,9 @@ module cpu_top #(
         .dbgdata      (dbgdata)
     );
 
-    // 指令 ROM: 100MHz 连续读, 地址用取指地址 PC 的低 10 位
+    // 指令 ROM: 与 CPU 共用 cpu_clk, 上升沿读 PC, 下降沿由 IF/ID 采样
     prog_rom u_rom (
-        .clk  (CLK100MHZ),
+        .clk  (cpu_clk),
         .prog (prog_sel),
         .addr (imemaddr[9:2]),
         .dout (imemdataout)
@@ -183,20 +196,23 @@ module cpu_top #(
     wire [31:0] ram_dataout;
 
     // 结果寄存器: 程序用 sw 指令写到 0x2004, 内容是二进制结果
+    // 写入时刻与 CPU 的下降沿对齐, 和存储器写在同一个沿上
     reg [31:0] result_reg;
     initial result_reg = 32'b0;
-    always @(posedge dmemwrclk) begin
+    always @(negedge cpu_clk) begin
         if (reset)
             result_reg <= 32'b0;
         else if (dmemwe && io_res)
             result_reg <= dmemdatain;
     end
 
+    // 数据存储器直接接 cpu_clk: 读在上升沿, 写在下降沿, 内部各自取一个沿,
+    // 这样就不需要在顶层再反相出一个时钟网
     board_dmem u_dmem (
         .addr    (dmemaddr),
         .datain  (dmemdatain),
-        .rdclk   (dmemrdclk),
-        .wrclk   (dmemwrclk),
+        .rdclk   (cpu_clk),
+        .wrclk   (cpu_clk),
         .memop   (dmemop),
         .we      (dmemwe & ~io_hit),
         .dataout (ram_dataout)
