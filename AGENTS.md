@@ -75,6 +75,7 @@ Nexys A7-100T 的数码管为**共阳极、低电平点亮**。本仓库统一�
 Sections: **1. 实验目的** · **2. 实验原理** · **3. 实验设备** · **4. 实验步骤** · **5. 实验结果** · **6. 思考题** (only if the manual requires) · **个人思考** (always last). Fill in the actual OJ + board results; describe the design (module structure, I/O wiring to SW/LED).
 
 ### Report style rules
+- **报告应用中文写，写作时去掉无意义的假口语化、比喻、总结，改掉不是而是句式，使用中文习惯的主谓宾表达方式。**
 - **Do NOT put （OJ）/（上板）tags in the report** — not in section headings (`### 4.1 ...（OJ）`) nor in result subsection titles. OJ/上板 is workflow metadata, not report content; just state results normally (e.g. "在线评测通过").
 - **Minimize parenthesized asides （）in general.** Rewrite them inline (e.g. "动态（扫描）显示" → "动态扫描显示", "（周期 10ns）" → "周期 10ns 的 …"). Keep parens only where they carry real info that reads badly inline (pin locations like `CLK100MHZ`（E3）, parameter overrides, component models). lab04 报告是正面范例，继续保持。
 - **标点规范：** 中文正文一律用全角标点（，。；：？！）和全角引号“ ”；英文文本用半角引号 `" "`。不要中英文混用半角标点。
