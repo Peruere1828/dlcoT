@@ -1,4 +1,4 @@
-## lab08 exp1_dmem pin map (Nexys A7-100T)
+## lab08 exp2_dmem pin map (Nexys A7-100T)
 ## SW[2:0]=Memop SW[3]=we SW[7:4]=addr[3:0] SW[15:8]=写数据
 ## AN7:0=位选, HEX7:0={seg6:0,DP}=32位读数据的十六进制显示
 
