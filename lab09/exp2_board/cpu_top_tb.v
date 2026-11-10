@@ -19,7 +19,7 @@ module cpu_top_tb;
     // 缩小各计数器, 让仿真在几百微秒内跑完
     cpu_top #(
         .POR_BITS (3),
-        .DIV_BITS (2),
+        .DIV_BITS (2),        // 25MHz, 10ns 高 / 30ns 低
         .DB_BITS  (2),
         .SCAN_BITS(2)
     ) uut (

@@ -12,7 +12,7 @@
 // 板上操作:
 //   SW[15:14]  选择程序: 00 累加和 1..n / 01 斐波那契 F(n)
 //                        10 闰年判断 / 11 素数判断
-//   SW[13]     1 = 自动运行（约 780kHz），0 = BTNC 单步
+//   SW[13]     1 = 自动运行（25MHz），0 = BTNC 单步
 //   SW[11:0]   参数 n（3 位十六进制，0x000~0xFFF）
 //   SW[12]     未使用
 //   开关在复位期间被锁存；改参数或换程序后按一下 CPU_RESETN
@@ -26,25 +26,25 @@
 //   0x0000_2004          只写: 结果寄存器（二进制），送数码管以十六进制显示
 //
 // 时序设计:
-//   CPU 侧只有一根时钟 cpu_clk: 由 100MHz 分频得到, 周期 1.28us, 高电平
+//   CPU 侧只有一根时钟 cpu_clk: 由 100MHz 四分频得到, 周期 40ns, 高电平
 //   10ns, 经 BUFG 送到全局时钟网. 指令 ROM、数据存储器和 CPU 本体都接这根
-//   时钟, 没有反相时钟网, 也没有第二个时钟域. 一个 10ns 脉冲就是一条指令:
+//   时钟, 没有反相时钟网, 也没有第二个时钟域. 一个 10ns 高电平就是一条指令:
 //
-//     上升沿 t=0         数据存储器读出整字, 锁进内部读寄存器 rdword
-//     高电平 0~10ns      rdword 经 memop 选择与符号扩展、写回选择器,
-//                        送到寄存器堆的写数据端
-//     下降沿 t=10ns      PC 装入 NextPC
-//                        prog_rom 按 NextPC 读出 mem[NextPC]
-//                        寄存器堆写回上一条指令的结果
-//                        board_dmem 按 memop 改写字节或半字
-//                        result_reg 锁存写往 0x2004 的数据
-//     低电平 10ns~1.28us 取出的指令经译码、立即数、读寄存器堆、ALU 运算,
-//                        得到访存地址, 等下一个上升沿
+//     上升沿 t=0          数据存储器读出整字, 锁进内部读寄存器 rdword
+//     高电平 0~10ns       rdword 经 memop 选择与符号扩展、写回选择器,
+//                         送到寄存器堆的写数据端
+//     下降沿 t=10ns       PC 装入 NextPC
+//                         prog_rom 按 NextPC 读出 mem[NextPC]
+//                         寄存器堆写回上一条指令的结果
+//                         board_dmem 按 memop 改写字节或半字
+//                         result_reg 锁存写往 0x2004 的数据
+//     低电平 10ns~40ns    取出的指令经译码、立即数、读寄存器堆、ALU 运算,
+//                         得到访存地址, 等下一个上升沿
 //
 //   三段路径的时间预算不同. 上升沿到下降沿只有 10ns, 里面只有"读出的字向下
 //   游走"这一段: memop 选择、符号扩展和写回选择器, 没有取指也没有 ALU, 这是
-//   唯一受压的一段, 时序报告里的 WNS 就落在这里. 下降沿到上升沿有 1.27us,
-//   整条取指译码和 ALU 通路都在这段里. 下降沿到下降沿是一个完整周期 1.28us,
+//   唯一受压的一段, 时序报告里的 WNS 就落在这里. 下降沿到上升沿有 30ns,
+//   整条取指译码和 ALU 通路都在这段里. 下降沿到下降沿是一个完整周期 40ns,
 //   NextPC 的加法属于这一段.
 //
 //   寄存器堆的写和 PC 的装发生在同一个下降沿. 寄存器堆的读是异步的, 新值
@@ -52,13 +52,13 @@
 //   所以两个动作同沿并不冲突. PC 采样地址, 只能用沿前就稳定的值, 这就是
 //   指令 ROM 的地址必须接 NextPC 而不是 PC 的原因.
 //
-//   XDC 用 create_generated_clock -edges {1 3 257} 把这根逻辑时钟按真实
+//   XDC 用 create_generated_clock -edges {1 3 9} 把这根逻辑时钟按真实
 //   波形声明在 BUFG 的输出上. 不声明的话 Vivado 把它当成无时钟信号, CPU
 //   内部寄存器全部记成 no_clock, 时序报告等于没做.
 
 module cpu_top #(
     parameter integer POR_BITS  = 19,   // 上电复位计数位宽
-    parameter integer DIV_BITS  = 7,    // 自动运行分频, 2^7 * 10ns ≈ 1.28us
+    parameter integer DIV_BITS  = 2,    // 自动运行分频, 2^2 * 10ns = 40ns, 25MHz
     parameter integer DB_BITS   = 17,   // BTNC 消抖计数位宽
     parameter integer SCAN_BITS = 15    // 数码管扫描分频
 ) (
@@ -132,7 +132,9 @@ module cpu_top #(
 
     wire step_pulse = btn_clean & ~btn_clean_d;   // 按下一次, 一个时钟周期
 
-    // 自动运行的慢速节拍
+    // 自动运行的 25MHz 时钟: div_cnt 每 10ns 加一, 计满时输出一个 10ns
+    // 高电平, 周期 40ns. 这是一个连续时钟, 不是单次脉冲.
+    // 单步模式下改为 reset_pulse 或 BTNC 消抖后的单次脉冲.
 
     reg [DIV_BITS-1:0] div_cnt;
     initial div_cnt = {DIV_BITS{1'b0}};
@@ -141,13 +143,11 @@ module cpu_top #(
 
     wire auto_pulse = &div_cnt;
 
-    // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回.
-    // 复位时改用 reset_pulse, 这样单步模式下按复位也能清 PC.
-    //
-    // 脉冲经过 BUFG 送到全局时钟网: 脉宽仍是 10ns, 时钟树从 BUFG 开始,
-    // 不再是 LUT 直接驱动时钟脚. 周期 1.28us 在 XDC 里按生成时钟声明.
-    wire run_pulse   = sw_r[13] ? auto_pulse : step_pulse;
-    wire clk_pulse   = reset ? reset_pulse : run_pulse;
+    // 自动模式: 连续 25MHz 时钟, 复位期间也持续运行, 由 CPU 内部的同步复位
+    // 在时钟沿上清状态. 单步模式: 复位时给一个 10ns 脉冲, 之后每按一次
+    // BTNC 给一个 10ns 脉冲, 两次脉冲之间 CPU 没有时钟沿, 状态保持不变.
+    wire clk_pulse = sw_r[13] ? auto_pulse
+                              : (reset ? reset_pulse : step_pulse);
 
     wire cpu_clk;
 
@@ -161,6 +161,15 @@ module cpu_top #(
     );
 `endif
 
+    // 自动模式下复位释放与 cpu_clk 的下降沿对齐. 单步模式没有连续时钟,
+    // 直接使用复位脉冲. cpu_reset 只送给 CPU 时钟域内的逻辑.
+    reg [1:0] cpu_rst_sync;
+    initial cpu_rst_sync = 2'b11;
+    always @(negedge cpu_clk)
+        cpu_rst_sync <= {cpu_rst_sync[0], reset};
+
+    wire cpu_reset = reset | (sw_r[13] ? cpu_rst_sync[1] : 1'b0);
+
     // CPU 与存储器
 
     wire [31:0] imemaddr, imemdataout;
@@ -172,7 +181,7 @@ module cpu_top #(
 
     rv32is u_cpu (
         .clock        (cpu_clk),
-        .reset        (reset),
+        .reset        (cpu_reset),
         .imemaddr     (imemaddr),
         .imemdataout  (imemdataout),
         .imemclk      (imemclk),
@@ -213,7 +222,7 @@ module cpu_top #(
     reg [31:0] result_reg;
     initial result_reg = 32'b0;
     always @(negedge cpu_clk) begin
-        if (reset)
+        if (cpu_reset)
             result_reg <= 32'b0;
         else if (dmemwe && io_res)
             result_reg <= dmemdatain;
