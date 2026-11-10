@@ -1,6 +1,6 @@
 ## lab10 exp2_board 五段流水线 CPU 上板引脚 (Nexys A7-100T)
 ## 上板文件: cpu_top.v + rv32ip.v + prog_rom.v + board_dmem.v + prog.hex + cpu_top.xdc
-## SW[15:14]=程序选择, SW[13]=1 自动运行/0 BTNC 单步, SW[12]=显示结果/周期数
+## SW[15:14]=程序选择, SW[13]=1 自动运行 25MHz/0 BTNC 单步, SW[12]=显示结果/周期数
 ## SW[11:0]=n (0x000~0xFFF)
 ## CPU_RESETN=C12 低有效复位, BTNC=N17 单步, LED[15:0]=PC 低 16 位
 ## AN[7:0]=位选, HEX[7:0]={seg[6:0],DP}=十六进制结果
@@ -9,13 +9,19 @@
 set_property -dict { PACKAGE_PIN E3    IOSTANDARD LVCMOS33 } [get_ports { CLK100MHZ }];
 create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports { CLK100MHZ }];
 
-## CPU 步进时钟: 由 100MHz 逻辑产生, 10ns 高电平, 周期 1.28us
+## CPU 时钟: 默认 25MHz, 100MHz 四分频, 10ns 高电平, 40ns 周期
 ## create_generated_clock 没有 -period, 周期由 -edges 相对主时钟给出:
-##   边沿 1   = 0ns    上升
-##   边沿 3   = 10ns   下降
-##   边沿 257 = 1280ns 下一个上升
+##   边沿 1 = 0ns    上升
+##   边沿 3 = 10ns   下降
+##   边沿 9 = 40ns   下一个上升
+## 试 50MHz 时: 把 cpu_top.v 的 DIV_BITS 改成 1, 注释掉下面这条 25MHz
+## 约束, 再启用文件末尾的 50MHz 备用约束. 两个地方必须同时改.
 create_generated_clock -name cpu_clk -source [get_ports { CLK100MHZ }] \
-    -edges {1 3 257} [get_pins { u_bufg_cpu/O }]
+    -edges {1 3 9} [get_pins { u_bufg_cpu/O }]
+
+## 50MHz 备用约束: 边沿 1=0ns 上升, 3=10ns 下降, 5=20ns 下一个上升
+# create_generated_clock -name cpu_clk -source [get_ports { CLK100MHZ }] \
+#     -edges {1 3 5} [get_pins { u_bufg_cpu/O }]
 
 ## CPU 时钟与 100MHz 之间是准静态交换: 开关在复位期间锁存, 结果寄存器只在
 ## 两次 CPU 步进之间被扫描显示读到. 标明异步, 避免按 10ns 强行检查这些路径

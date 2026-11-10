@@ -27,7 +27,7 @@ module board_dmem(
                      OFF_B2 = 2'd2;
 
     localparam integer MEM_WORDS = 1024;   // 4KB / 4B
-    reg [31:0] mem [0:MEM_WORDS-1];
+    (* ram_style = "block" *) reg [31:0] mem [0:MEM_WORDS-1];
     integer i;
     initial begin
         for (i = 0; i < MEM_WORDS; i = i + 1)

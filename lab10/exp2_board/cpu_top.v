@@ -12,7 +12,7 @@
 // 板上操作:
 //   SW[15:14]  选择程序: 00 累加和 1..n / 01 斐波那契 F(n)
 //                        10 闰年判断 / 11 素数判断
-//   SW[13]     1 = 自动运行（约 780kHz），0 = BTNC 单步
+//   SW[13]     1 = 自动运行（默认 25MHz，可改 50MHz），0 = BTNC 单步
 //   SW[12]     显示选择: 0 显示程序结果, 1 显示已经执行的 CPU 周期数
 //   SW[11:0]   参数 n（3 位十六进制，0x000~0xFFF）
 //   开关在复位期间被锁存；改参数或换程序后按一下 CPU_RESETN
@@ -33,10 +33,17 @@
 // 复位脉冲的那个上升沿就把 0 地址的指令读出来了, 第一次取指不会拿到
 // 未初始化的输出. ROM 的地址用 PC, 这个值在上一个下降沿就已经稳定,
 // 上升沿读出后由下降沿的 IF/ID 采样, 不需要第二个时钟域.
+//
+// 频率配置:
+//   25MHz: DIV_BITS=2, 100MHz 四分频, 周期 40ns, 10ns 高/30ns 低,
+//          XDC 用 -edges {1 3 9}
+//   50MHz: DIV_BITS=1, 100MHz 二分频, 周期 20ns, 10ns 高/10ns 低,
+//          XDC 用 -edges {1 3 5}
+//   两个参数必须同时改, 否则 Vivado 分析的时钟和板上实际时钟不一致.
 
 module cpu_top #(
     parameter integer POR_BITS  = 19,   // 上电复位计数位宽
-    parameter integer DIV_BITS  = 7,    // 自动运行分频, 2^7 * 10ns ≈ 1.28us
+    parameter integer DIV_BITS  = 2,    // 25MHz: 2^2 * 10ns = 40ns; 50MHz 改成 1
     parameter integer DB_BITS   = 17,   // BTNC 消抖计数位宽
     parameter integer SCAN_BITS = 15    // 数码管扫描分频
 ) (
@@ -110,7 +117,8 @@ module cpu_top #(
 
     wire step_pulse = btn_clean & ~btn_clean_d;   // 按下一次, 一个时钟周期
 
-    // 自动运行的慢速节拍
+    // 自动运行的 CPU 时钟: div_cnt 每 10ns 加一, 计满时输出一个 10ns
+    // 高电平. DIV_BITS=2 时周期 40ns, 25MHz; DIV_BITS=1 时周期 20ns, 50MHz.
 
     reg [DIV_BITS-1:0] div_cnt;
     initial div_cnt = {DIV_BITS{1'b0}};
@@ -119,13 +127,10 @@ module cpu_top #(
 
     wire auto_pulse = &div_cnt;
 
-    // 一个脉冲就是一个完整的 CPU 周期: 上升沿读数据存储器, 下降沿写回.
-    // 复位时改用 reset_pulse, 这样单步模式下按复位也能清 PC.
-    //
-    // 脉冲经过 BUFG 送到全局时钟网: 脉宽仍是 10ns, 时钟树从 BUFG 开始,
-    // 不再是 LUT 直接驱动时钟脚. 周期 1.28us 在 XDC 里按生成时钟声明.
-    wire run_pulse   = sw_r[13] ? auto_pulse : step_pulse;
-    wire clk_pulse   = reset ? reset_pulse : run_pulse;
+    // 自动模式: 连续时钟, 复位期间也持续运行, 由 CPU 内部的同步复位清状态.
+    // 单步模式: 复位时给一个 10ns 脉冲, 之后每按一次 BTNC 给一个 10ns 脉冲.
+    wire clk_pulse = sw_r[13] ? auto_pulse
+                              : (reset ? reset_pulse : step_pulse);
 
     wire cpu_clk;
 
@@ -139,12 +144,21 @@ module cpu_top #(
     );
 `endif
 
+    // 自动模式下复位释放与 cpu_clk 的下降沿对齐. 单步模式没有连续时钟,
+    // 直接使用复位脉冲. cpu_reset 只送给 CPU 时钟域内的逻辑.
+    reg [1:0] cpu_rst_sync;
+    initial cpu_rst_sync = 2'b11;
+    always @(negedge cpu_clk)
+        cpu_rst_sync <= {cpu_rst_sync[0], reset};
+
+    wire cpu_reset = reset | (sw_r[13] ? cpu_rst_sync[1] : 1'b0);
+
     // 周期计数: 数码管可以显示到目前为止执行了多少个 CPU 周期
 
     reg [31:0] cyc_cnt;
     initial cyc_cnt = 32'b0;
     always @(posedge cpu_clk) begin
-        if (reset)
+        if (cpu_reset)
             cyc_cnt <= 32'b0;
         else
             cyc_cnt <= cyc_cnt + 1'b1;
@@ -161,7 +175,7 @@ module cpu_top #(
 
     rv32ip u_cpu (
         .clock        (cpu_clk),
-        .reset        (reset),
+        .reset        (cpu_reset),
         .imemaddr     (imemaddr),
         .imemdataout  (imemdataout),
         .imemclk      (imemclk),
@@ -200,7 +214,7 @@ module cpu_top #(
     reg [31:0] result_reg;
     initial result_reg = 32'b0;
     always @(negedge cpu_clk) begin
-        if (reset)
+        if (cpu_reset)
             result_reg <= 32'b0;
         else if (dmemwe && io_res)
             result_reg <= dmemdatain;
