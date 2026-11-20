@@ -6,3 +6,14 @@ lab*/a.txt
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 仿真波形文件不入库
+*.vcd
+
+# lab12 软件工程的编译中间文件
+lab12/exp1_system/sw/*.o
+lab12/exp1_system/sw/*.elf
+lab12/exp1_system/sw/*.dump
+lab12/exp1_system/sw/*.tmp
+lab12/exp1_system/sw/main.hex
+lab12/exp1_system/sw/main_d.hex
