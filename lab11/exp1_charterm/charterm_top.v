@@ -1,9 +1,14 @@
 // lab11 exp1: 键盘输入 + VGA 字符终端
 // 上板文件: charterm_top.v + charterm_top.xdc
 // 功能: 30 行 x 70 列字符显示, 小写字母/数字/符号回显, 行尾自动换行,
-//       回车换行, 自动滚屏, 闪烁光标, BackSpace, 方向键, Shift 大小写,
+//       回车换行, 自动滚屏, 闪烁光标, BackSpace, 方向键, Tab, Shift 大小写,
 //       行首提示符 "> "。
+// 行模型: 提示符只出现在按回车产生的逻辑行行首; 行满 70 列自动换行时,
+//         续行直接从第 0 列接着写, 不再打印提示符。
+// 方向键: 上下移动时, 若目标行的文字比当前列短, 光标停在目标行末尾字符之后。
+// 输入为覆盖式: 在光标处写字符并右移, 不搬动行内已有字符; 左右键可移到行末之后的空白格。
 // 字模: 用 $readmemh 从同目录 vga_font.txt 加载, 上板时需一并加入该文件。
+//       字模为林同学修正版: 0xB0~0xDF 的块元素/制表符右移一像素并对齐, ASCII 部分同手册。
 
 module ps2_keyboard(
     input        clk,
@@ -171,14 +176,18 @@ module charterm_top(
     localparam [3:0] T_BSCAN       = 4'd7;
     localparam [3:0] T_JOIN0       = 4'd8;
     localparam [3:0] T_JOIN1       = 4'd9;
+    localparam [3:0] T_JOIN2       = 4'd10;
+    localparam [3:0] T_TAB         = 4'd11;
+    localparam [3:0] T_SCAN        = 4'd12;
 
-    localparam [2:0] EV_PRINT = 3'd1;
-    localparam [2:0] EV_ENTER = 3'd2;
-    localparam [2:0] EV_BS    = 3'd3;
-    localparam [2:0] EV_LEFT  = 3'd4;
-    localparam [2:0] EV_RIGHT = 3'd5;
-    localparam [2:0] EV_UP    = 3'd6;
-    localparam [2:0] EV_DOWN  = 3'd7;
+    localparam [3:0] EV_PRINT = 4'd1;
+    localparam [3:0] EV_ENTER = 4'd2;
+    localparam [3:0] EV_BS    = 4'd3;
+    localparam [3:0] EV_LEFT  = 4'd4;
+    localparam [3:0] EV_RIGHT = 4'd5;
+    localparam [3:0] EV_UP    = 4'd6;
+    localparam [3:0] EV_DOWN  = 4'd7;
+    localparam [3:0] EV_TAB   = 4'd8;
 
     // 25MHz 像素时钟
     reg [1:0] div_cnt;
@@ -294,7 +303,7 @@ module charterm_top(
 
     reg [1:0] kstate;
     reg       ev_valid;
-    reg [2:0] ev_type;
+    reg [3:0] ev_type;
     reg [7:0] ev_ascii;
 
     wire [7:0] rx_ascii = ascii_of(rx, shift);
@@ -318,6 +327,7 @@ module charterm_top(
                     8'h12:   shift_l <= 1'b1;
                     8'h59:   shift_r <= 1'b1;
                     8'h14:   ctrl_l  <= 1'b1;
+                    8'h0D: begin ev_type <= EV_TAB; ev_valid <= 1'b1; end // Tab
                     default: begin
                         if (rx_ascii == 8'h0D) begin
                             ev_type <= EV_ENTER; ev_valid <= 1'b1;
@@ -384,13 +394,18 @@ module charterm_top(
     reg [4:0]  row_clear;
     reg [1:0]  prompt_i;
     reg [7:0]  pending_ch;
+    reg [6:0]  save_col;      // 上下移动前的列号
+    reg        join_clear;    // 行首退格时是否需要清掉本行提示符
+    reg        scroll_prompt; // 滚屏结束后是否打印提示符
 
     wire [5:0] disp_row_sum = {1'b0, top_row} + {1'b0, v_row};
     wire [4:0] disp_phys    = disp_row_sum[4:0];
     wire [5:0] cur_row_sum  = {1'b0, top_row} + {1'b0, cur_row};
     wire [4:0] curs_phys    = cur_row_sum[4:0];
     wire [5:0] bottom_row   = {1'b0, top_row} + 6'd29;
-    wire [6:0] scan_next    = scan_col + 7'd1;
+
+    // 当前行是否是逻辑行首: 只有按回车产生的行才在 col0 有提示符
+    wire prompt_row = (charmem[{curs_phys, 7'd0}] == CH_GT);
 
     // 写端口: 由状态机组合译码出地址/数据
     always @(*) begin
@@ -402,10 +417,13 @@ module charterm_top(
             T_PRINT:  begin wr_en = 1'b1; wr_addr = {curs_phys, cur_col};          wr_data = pending_ch; end
             T_PROMPT: begin wr_en = 1'b1; wr_addr = {curs_phys, prompt_i ? 7'd1 : 7'd0};
                           wr_data = prompt_i ? SP : CH_GT; end
+            T_TAB:    begin wr_en = 1'b1; wr_addr = {curs_phys, cur_col};          wr_data = SP; end
             T_SCROLL: begin wr_en = 1'b1; wr_addr = {row_clear, sc};               wr_data = SP; end
             T_BS:     begin wr_en = 1'b1; wr_addr = {curs_phys, cur_col - 7'd1};   wr_data = SP; end
-            T_JOIN0:  begin wr_en = 1'b1; wr_addr = {curs_phys, 7'd0};             wr_data = SP; end
-            T_JOIN1:  begin wr_en = 1'b1; wr_addr = {curs_phys, 7'd1};             wr_data = SP; end
+            T_JOIN0:  begin wr_en = join_clear; wr_addr = {curs_phys, 7'd0};       wr_data = SP; end
+            T_JOIN1:  begin wr_en = join_clear; wr_addr = {curs_phys, 7'd1};       wr_data = SP; end
+            T_BSCAN:  begin wr_en = (chr != SP) && (scan_col == 7'd69);
+                          wr_addr = {curs_phys, 7'd69};                            wr_data = SP; end
             default: ;
         endcase
     end
@@ -423,6 +441,9 @@ module charterm_top(
             row_clear  <= 5'd0;
             prompt_i   <= 2'd0;
             pending_ch <= SP;
+            save_col   <= 7'd0;
+            join_clear <= 1'b0;
+            scroll_prompt <= 1'b1;
         end else begin
             case (tstate)
             T_IDLE: begin
@@ -432,27 +453,47 @@ module charterm_top(
                         pending_ch <= ev_ascii;
                         tstate     <= T_PRINT;
                     end
+                    EV_TAB: begin
+                        tstate <= T_TAB;
+                    end
                     EV_ENTER: begin
                         if (cur_row == 5'd29) begin
-                            top_row <= top_row + 1'b1;
-                            tstate  <= T_SCROLL_INIT;
+                            top_row       <= top_row + 1'b1;
+                            scroll_prompt <= 1'b1;
+                            tstate        <= T_SCROLL_INIT;
                         end else begin
                             cur_row <= cur_row + 1'b1;
                             tstate  <= T_PROMPT;
                         end
                     end
                     EV_BS: begin
-                        if (cur_col > PROMPT_COLS)
+                        if (prompt_row ? (cur_col > PROMPT_COLS) : (cur_col != 7'd0)) begin
                             tstate <= T_BS;
-                        else if (cur_row != 5'd0)
-                            tstate <= T_JOIN0;
-                        else
+                        end else if (cur_row != 5'd0) begin
+                            join_clear <= prompt_row;
+                            tstate     <= T_JOIN0;
+                        end else begin
                             tstate <= T_IDLE;
+                        end
                     end
                     EV_LEFT:  if (cur_col != 7'd0)  cur_col <= cur_col - 1'b1;
                     EV_RIGHT: if (cur_col != 7'd69) cur_col <= cur_col + 1'b1;
-                    EV_UP:    if (cur_row != 5'd0)  cur_row <= cur_row - 1'b1;
-                    EV_DOWN:  if (cur_row != 5'd29) cur_row <= cur_row + 1'b1;
+                    EV_UP: begin
+                        if (cur_row != 5'd0) begin
+                            cur_row  <= cur_row - 1'b1;
+                            save_col <= cur_col;
+                            scan_col <= 7'd69;
+                            tstate   <= T_SCAN;
+                        end
+                    end
+                    EV_DOWN: begin
+                        if (cur_row != 5'd29) begin
+                            cur_row  <= cur_row + 1'b1;
+                            save_col <= cur_col;
+                            scan_col <= 7'd69;
+                            tstate   <= T_SCAN;
+                        end
+                    end
                     default: ;
                     endcase
                 end
@@ -477,15 +518,33 @@ module charterm_top(
                 if (cur_col == 7'd69) begin
                     cur_col <= 7'd0;
                     if (cur_row == 5'd29) begin
-                        top_row <= top_row + 1'b1;
-                        tstate  <= T_SCROLL_INIT;
+                        top_row       <= top_row + 1'b1;
+                        scroll_prompt <= 1'b0;
+                        tstate        <= T_SCROLL_INIT;
                     end else begin
                         cur_row <= cur_row + 1'b1;
-                        tstate  <= T_PROMPT;
+                        tstate  <= T_IDLE;
                     end
                 end else begin
                     cur_col <= cur_col + 1'b1;
                     tstate  <= T_IDLE;
+                end
+            end
+            T_TAB: begin
+                if (cur_col == 7'd69) begin
+                    cur_col <= 7'd0;
+                    if (cur_row == 5'd29) begin
+                        top_row       <= top_row + 1'b1;
+                        scroll_prompt <= 1'b0;
+                        tstate        <= T_SCROLL_INIT;
+                    end else begin
+                        cur_row <= cur_row + 1'b1;
+                        tstate  <= T_IDLE;
+                    end
+                end else begin
+                    cur_col <= cur_col + 1'b1;
+                    if (cur_col[1:0] == 2'b11)
+                        tstate <= T_IDLE;   // 已经补到下一个 4 列制表位
                 end
             end
             T_PROMPT: begin
@@ -508,7 +567,7 @@ module charterm_top(
                     cur_row  <= 5'd29;
                     cur_col  <= 7'd0;
                     prompt_i <= 2'd0;
-                    tstate   <= T_PROMPT;
+                    tstate   <= scroll_prompt ? T_PROMPT : T_IDLE;
                 end else begin
                     sc <= sc + 1'b1;
                 end
@@ -521,16 +580,40 @@ module charterm_top(
                 tstate <= T_JOIN1;
             end
             T_JOIN1: begin
+                tstate <= T_JOIN2;
+            end
+            T_JOIN2: begin
                 cur_row  <= cur_row - 1'b1;
                 scan_col <= 7'd69;
                 tstate   <= T_BSCAN;
             end
             T_BSCAN: begin
-                if ((chr != SP) && (scan_col > PROMPT_COLS)) begin
-                    cur_col <= (scan_col == 7'd69) ? 7'd69 : scan_next;
-                    tstate  <= T_IDLE;
+                if (chr != SP) begin
+                    if ((scan_col == 7'd0) && (chr == CH_GT))
+                        cur_col <= PROMPT_COLS;      // 上一行只有提示符
+                    else if (scan_col == 7'd69)
+                        cur_col <= 7'd69;            // 上一行写满, 停在被删字符的位置
+                    else
+                        cur_col <= scan_col + 7'd1;
+                    tstate <= T_IDLE;
                 end else if (scan_col == 7'd0) begin
-                    cur_col <= PROMPT_COLS;
+                    cur_col <= 7'd0;
+                    tstate  <= T_IDLE;
+                end else begin
+                    scan_col <= scan_col - 1'b1;
+                end
+            end
+            T_SCAN: begin
+                if (chr != SP) begin
+                    if ((scan_col == 7'd0) && (chr == CH_GT))
+                        cur_col <= PROMPT_COLS;      // 目标行只有提示符
+                    else if (save_col > scan_col + 7'd1)
+                        cur_col <= scan_col + 7'd1;  // 目标行更短, 停在行末字符之后
+                    else
+                        cur_col <= save_col;
+                    tstate <= T_IDLE;
+                end else if (scan_col == 7'd0) begin
+                    cur_col <= 7'd0;                 // 目标行全空
                     tstate  <= T_IDLE;
                 end else begin
                     scan_col <= scan_col - 1'b1;
@@ -541,9 +624,10 @@ module charterm_top(
         end
     end
 
-    // 字符显存读口: 显示扫描用当前屏幕坐标, 退格扫描时临时改读上一行
+    // 字符显存读口: 显示扫描用当前屏幕坐标, 退格/上下移动扫描时临时改读光标所在行
     wire [11:0] char_addr = {disp_phys, char_col};
-    wire [11:0] rd_addr   = (tstate == T_BSCAN) ? {curs_phys, scan_col} : char_addr;
+    wire [11:0] rd_addr   = ((tstate == T_BSCAN) || (tstate == T_SCAN))
+                            ? {curs_phys, scan_col} : char_addr;
     reg  [7:0]  chr;
     always @(*) chr = charmem[rd_addr];
 

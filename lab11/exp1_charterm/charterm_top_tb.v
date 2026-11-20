@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
-// charterm_top 自检: 键盘模型发扫描码, 比对显存与光标, 约 85us 跑完
+// charterm_top 自检: 键盘模型发扫描码, 比对显存与光标, 约 90us 跑完
 
 module ps2_keyboard_model(
     output reg ps2_clk,
@@ -200,59 +200,81 @@ module charterm_top_tb;
         settle;
         chk_cur(5'd0, 7'd6, 5'd0);
 
-        // 8. 方向键
+        // 8. 方向键: 上下移动时列号钳位到目标行行末, 不落到空白区域
         send(8'hE0); send(8'h6B); settle;    // Left
         chk_cur(5'd0, 7'd5, 5'd0);
         send(8'hE0); send(8'h74); settle;    // Right
         chk_cur(5'd0, 7'd6, 5'd0);
-        send(8'hE0); send(8'h75); settle;    // Up
+        send(8'hE0); send(8'h75); settle;    // Up 在首行不动
         chk_cur(5'd0, 7'd6, 5'd0);
-        send(8'hE0); send(8'h72); settle;    // Down
-        chk_cur(5'd1, 7'd6, 5'd0);
-        send(8'hE0); send(8'h75); settle;    // Up
+        send(8'hE0); send(8'h72); settle;    // Down 到空白行, 列号收到 0
+        chk_cur(5'd1, 7'd0, 5'd0);
+        uut.cur_col = 7'd40;                 // 强行把光标放到空白区域
+        #100;
+        send(8'hE0); send(8'h75); settle;    // Up 落在 '!' 之后
         chk_cur(5'd0, 7'd6, 5'd0);
 
-        // 9. 行尾自动换行
+        // 9. Tab: 补空格到下一个 4 列制表位
+        send(8'h0D); settle;                 // 已在 col6 -> 补 col6,col7, 停在 col8
+        chk_byte(cell_idx(5'd0, 7'd6), SP,  8'd16);
+        chk_byte(cell_idx(5'd0, 7'd7), SP,  8'd17);
+        chk_cur(5'd0, 7'd8, 5'd0);
+        send(8'h0D); settle;                 // 已在制表位 -> 补 4 个空格到 col12
+        chk_byte(cell_idx(5'd0, 7'd11), SP, 8'd18);
+        chk_cur(5'd0, 7'd12, 5'd0);
+
+        // 10. 行尾自动换行: 续行不打印提示符
         uut.cur_col = 7'd69;
         #100;
         send(8'h22); settle;                 // x -> 写在 col69 后换行
-        chk_byte(cell_idx(5'd0, 7'd69), 8'h78, 8'd15);
-        chk_byte(cell_idx(5'd1, 7'd0), 8'h3E, 8'd16);
-        chk_cur(5'd1, 7'd2, 5'd0);
+        chk_byte(cell_idx(5'd0, 7'd69), 8'h78, 8'd19);
+        chk_byte(cell_idx(5'd1, 7'd0),  SP,    8'd20);
+        chk_cur(5'd1, 7'd0, 5'd0);
 
-        // 10. 末行回车 -> 滚屏
+        // 11. 续行输入; 续行行首退格应删掉上一行写满时最后一个字符
+        send(8'h35); settle;                 // y -> 写在续行 col0
+        chk_byte(cell_idx(5'd1, 7'd0), 8'h79, 8'd21);
+        chk_cur(5'd1, 7'd1, 5'd0);
+        send(8'h66); settle;                 // BackSpace 删 y
+        chk_byte(cell_idx(5'd1, 7'd0), SP, 8'd22);
+        chk_cur(5'd1, 7'd0, 5'd0);
+        send(8'h66); settle;                 // 续行行首退格 -> 删掉上一行 col69
+        chk_byte(cell_idx(5'd0, 7'd69), SP, 8'd23);
+        chk_cur(5'd0, 7'd69, 5'd0);
+
+        // 12. 末行回车 -> 滚屏
         uut.cur_row = 5'd29;
         uut.cur_col = 7'd2;
         #100;
         send(8'h5A); settle;                 // Enter on last row
         chk_cur(5'd29, 7'd2, 5'd1);          // top_row 加 1
-        chk_byte(cell_idx(5'd30, 7'd0), 8'h3E, 8'd17);
-        chk_byte(cell_idx(5'd30, 7'd1), SP,   8'd18);
-        chk_byte(cell_idx(5'd30, 7'd69), SP,  8'd19);
+        chk_byte(cell_idx(5'd30, 7'd0), 8'h3E, 8'd24);
+        chk_byte(cell_idx(5'd30, 7'd1), SP,   8'd25);
+        chk_byte(cell_idx(5'd30, 7'd69), SP,  8'd26);
 
-        // 11. 数字与不用 Shift 的符号
+        // 13. 数字与不用 Shift 的符号
         send(8'h16); settle;                 // 1
         send(8'h4E); settle;                 // -
         send(8'h45); settle;                 // 0
-        chk_byte(cell_idx(5'd30, 7'd2), 8'h31, 8'd20);
-        chk_byte(cell_idx(5'd30, 7'd3), 8'h2D, 8'd21);
-        chk_byte(cell_idx(5'd30, 7'd4), 8'h30, 8'd22);
+        chk_byte(cell_idx(5'd30, 7'd2), 8'h31, 8'd27);
+        chk_byte(cell_idx(5'd30, 7'd3), 8'h2D, 8'd28);
+        chk_byte(cell_idx(5'd30, 7'd4), 8'h30, 8'd29);
         chk_cur(5'd29, 7'd5, 5'd1);
 
-        // 12. 按住不放时键盘重复发送 make 码, 应重复回显
+        // 14. 按住不放时键盘重复发送 make 码, 应重复回显
         send(8'h1C); send(8'h1C); settle;    // a a
-        chk_byte(cell_idx(5'd30, 7'd5), 8'h61, 8'd23);
-        chk_byte(cell_idx(5'd30, 7'd6), 8'h61, 8'd24);
+        chk_byte(cell_idx(5'd30, 7'd5), 8'h61, 8'd30);
+        chk_byte(cell_idx(5'd30, 7'd6), 8'h61, 8'd31);
         chk_cur(5'd29, 7'd7, 5'd1);
 
-        // 13. 右 Shift 也能输入大写
+        // 15. 右 Shift 也能输入大写
         send(8'hE0); send(8'h59); settle;    // right shift make
         if (LED[0] !== 1'b1) begin
             $display("MISMATCH: right shift indicator not set");
             errors = errors + 1;
         end
         send(8'h43); settle;                 // shift+i => I
-        chk_byte(cell_idx(5'd30, 7'd7), 8'h49, 8'd25);
+        chk_byte(cell_idx(5'd30, 7'd7), 8'h49, 8'd32);
         chk_cur(5'd29, 7'd8, 5'd1);
         send(8'hE0); send(8'hF0); send(8'h59); // right shift release
         send(8'hF0); send(8'h43);            // release i
