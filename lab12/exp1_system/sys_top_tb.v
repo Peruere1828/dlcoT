@@ -9,7 +9,7 @@
 //       上下方向键调历史, 滚屏, 滚屏后的光标位置;
 //       复位后再测 echo / sw / led / history / clear 命令和 Ctrl+A/E/L/C/U.
 //
-// 仿真时间约 35ms, Vivado 里不要用默认的 1000ns, 需要手动修改仿真时长.
+// 仿真时间约 65ms, Vivado 里不要用默认的 1000ns, 需要手动修改仿真时长.
 // 用 iverilog 跑:
 //   iverilog -g2012 -Wall -s sys_top_tb -o /tmp/sim.out \
 //       sys_top.v rv32ip.v sys_top_tb.v && vvp /tmp/sim.out
