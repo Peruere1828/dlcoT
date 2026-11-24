@@ -6,9 +6,10 @@
 // 用 PS/2 时序敲键, 直接读字符显存和光标寄存器检查屏幕内容与光标位置.
 // 覆盖: 开机提示符, 字符回显, Enter, Backspace, hello / fib / time / 未知命令,
 //       行尾自动换行, 左右方向键在行内插入, Home/Delete/End, Tab 补全,
-//       上下方向键调历史, 滚屏, 滚屏后的光标位置.
+//       上下方向键调历史, 滚屏, 滚屏后的光标位置;
+//       复位后再测 echo / sw / led / history / clear 命令和 Ctrl+A/E/L/C/U.
 //
-// 仿真时间约 20ms 量级, Vivado 里不要用默认的 1000ns, 需要手动修改仿真时长.
+// 仿真时间约 35ms, Vivado 里不要用默认的 1000ns, 需要手动修改仿真时长.
 // 用 iverilog 跑:
 //   iverilog -g2012 -Wall -s sys_top_tb -o /tmp/sim.out \
 //       sys_top.v rv32ip.v sys_top_tb.v && vvp /tmp/sim.out
@@ -67,7 +68,7 @@ module sys_top_tb;
     task expect_row;
         input integer row;
         input integer len;
-        input [8*64-1:0] text;
+        input [8*96-1:0] text;
         integer i, base;
         reg [7:0] got;
         begin
@@ -170,6 +171,12 @@ module sys_top_tb;
                 8'h37: scan_of = 8'h3D; // 7
                 8'h38: scan_of = 8'h3E; // 8
                 8'h39: scan_of = 8'h46; // 9
+                8'h28: scan_of = 8'h46; // ( 需要按 Shift
+                8'h29: scan_of = 8'h45; // ) 需要按 Shift
+                8'h2D: scan_of = 8'h4E; // -
+                8'h2B: scan_of = 8'h55; // +
+                8'h2A: scan_of = 8'h3E; // *
+                8'h2F: scan_of = 8'h4A; // /
                 8'h20: scan_of = 8'h29; // space
                 8'h0A: scan_of = 8'h5A; // Enter
                 8'h08: scan_of = 8'h66; // BackSpace
@@ -230,6 +237,20 @@ module sys_top_tb;
     task key_tab;   begin type_key(8'h0D); end endtask
     task key_enter; begin type_key(8'h5A); end endtask
     task key_bs;    begin type_key(8'h66); end endtask
+
+    // Ctrl + 字母: 左 Ctrl 按下, 敲字母, 再依次放开
+    task key_ctrl;
+        input [7:0] c;
+        reg [7:0] code;
+        begin
+            code = scan_of(c);
+            ps2_send(8'h14);            // 左 Ctrl 通码
+            ps2_send(code);
+            ps2_send(8'hF0); ps2_send(code);
+            ps2_send(8'hF0); ps2_send(8'h14);
+            repeat (5) @(posedge clk100);
+        end
+    endtask
 
     // ------------------------------------------------------------------
     // 测试流程
@@ -331,6 +352,20 @@ module sys_top_tb;
                 errors = errors + 1;
                 $display("MISMATCH %0s: VGA 扫到 (%0d,%0d) 时 cursor_here=0, 光标没有画在这一格",
                          name, row, col);
+            end
+        end
+    endtask
+
+    // 敲一串字符, 字符串右对齐, 前面的 0 跳过
+    task type_line;
+        input [8*40-1:0] s;
+        integer k;
+        reg [7:0] ch;
+        begin
+            for (k = 39; k >= 0; k = k - 1) begin
+                ch = s[8*k +: 8];
+                if (ch != 8'h00)
+                    type_char(ch);
             end
         end
     endtask
@@ -497,7 +532,7 @@ module sys_top_tb;
         wait_prompt(28);
 
         expect_row(25, 6, "> help");
-        expect_row(26, 34, "commands: hello, time, fib n, help");
+        expect_row(26, 66, "commands: hello,time,fib n,echo,led,sw,mem,calc,history,clear,help");
         expect_row(27, 52, "keys: Left/Right move, Up/Down history, Tab complete");
         expect_row(28, 2, "> ");
 
@@ -544,6 +579,200 @@ module sys_top_tb;
         // 老实现比较的是物理行 30, 屏幕上没有第 30 行, 光标就消失了.
         check_cursor_cell(29, 2, "cursor after scroll");
 
+        // ================= 第二阶段: 复位后测控制键与新命令 =================
+        // 复位会清屏并重新跑 vga_init, 用干净的屏幕重新摆用例, 行号简单.
+        sw = 16'hA55A;
+        cpu_resetn = 1'b0;
+        repeat (50) @(posedge clk100);
+        cpu_resetn = 1'b1;
+
+        // 等标题重新出现, 避免读到上一阶段的残留内容
+        i = 0;
+        while ((!(scr(0, 0) === 8'h52 && scr(0, 1) === 8'h56)) && (i < 5_000_000)) begin
+            @(posedge clk100);
+            i = i + 1;
+        end
+        if (!(scr(0, 0) === 8'h52 && scr(0, 1) === 8'h56)) begin
+            errors = errors + 1;
+            $display("MISMATCH: 复位后没有重新打印标题");
+        end
+        expect_row(0, 19, "RV32I System  lab12");
+        expect_row(1, 27, "hello | time | fib n | help");
+        wait_prompt(2);
+
+        // ---------------- echo ----------------
+        type_line("echo hi there");
+        key_enter;
+        wait_prompt(4);
+        expect_row(2, 15, "> echo hi there");
+        expect_row(3, 8, "hi there");
+        expect_row(4, 2, "> ");
+
+        // ---------------- sw ----------------
+        type_line("sw");
+        key_enter;
+        wait_prompt(6);
+        expect_row(4, 4, "> sw");
+        expect_row(5, 10, "sw: 0xa55a");
+        expect_row(6, 2, "> ");
+
+        // ---------------- led ----------------
+        type_line("led 0x0f0f");
+        key_enter;
+        wait_prompt(8);
+        expect_row(6, 12, "> led 0x0f0f");
+        expect_row(7, 11, "led: 0x0f0f");
+        if (u_dut.LED[14:0] !== 15'h0F0F) begin
+            errors = errors + 1;
+            $display("MISMATCH led: LED[14:0] got %04h, expected 0f0f", u_dut.LED[14:0]);
+        end
+        expect_row(8, 2, "> ");
+
+        // ---------------- history ----------------
+        // 先把历史清空, 后面的行号才好算; 复位不会清 dmem, 上一阶段的命令还在里面
+        type_line("history clear");
+        key_enter;
+        wait_prompt(10);
+        expect_row(8, 15, "> history clear");
+        expect_row(9, 16, "history: cleared");
+        expect_row(10, 2, "> ");
+
+        type_line("echo again");
+        key_enter;
+        wait_prompt(12);
+        expect_row(11, 5, "again");
+        expect_row(12, 2, "> ");
+
+        type_line("history");
+        key_enter;
+        wait_prompt(16);
+        expect_row(12, 9, "> history");
+        expect_row(13, 8, "history:");
+        expect_row(14, 14, "  1 echo again");
+        expect_row(15, 11, "  2 history");
+        expect_row(16, 2, "> ");
+
+        // ---------------- Ctrl+L 清屏, 已输入的内容保留并重画 ----------------
+        type_line("ab");
+        wait_byte(16, 3, "b");
+        key_ctrl("l");
+        wait_byte(0, 3, "b");
+        expect_row(0, 4, "> ab");
+        check_byte(0, 4, 8'h00, "ctrl-l tail cleared");
+        check_byte(1, 0, 8'h00, "ctrl-l screen cleared");
+        check_cursor(0, 4, 0);
+
+        // ---------------- Ctrl+U 清空当前行 ----------------
+        key_ctrl("u");
+        wait_byte(0, 2, 8'h00);
+        expect_row(0, 2, "> ");
+        check_cursor(0, 2, 0);
+
+        // ---------------- Ctrl+A / Ctrl+E / Ctrl+C ----------------
+        type_line("xyz");
+        wait_byte(0, 4, "z");
+        key_ctrl("a");
+        check_cursor(0, 2, 0);
+        key_ctrl("e");
+        check_cursor(0, 5, 0);
+        key_ctrl("c");
+        wait_prompt(1);
+        expect_row(0, 7, "> xyz^C");
+        expect_row(1, 2, "> ");
+        check_cursor(1, 2, 1);
+
+        // ---------------- clear 命令 ----------------
+        type_line("clear");
+        key_enter;
+        // 清屏是逐字节清显存, 要等它清完并把新提示符写回第 0 行
+        i = 0;
+        while ((!(scr(0, 0) === 8'h3E && scr(0, 1) === 8'h20 &&
+                  scr(0, 2) === 8'h00 && scr(1, 0) === 8'h00)) && (i < 2_000_000)) begin
+            @(posedge clk100);
+            i = i + 1;
+        end
+        check_byte(0, 0, 8'h3E, "clear prompt >");
+        check_byte(0, 1, 8'h20, "clear prompt space");
+        check_byte(1, 0, 8'h00, "clear row 1 blank");
+        check_cursor(0, 2, 0);
+
+        // ---------------- 跨两行的输入行上按 Ctrl+C ----------------
+        // 70 个 z 填满第 0 行并续到第 1 行, ^C 要打在第 1 行行尾, 提示符落在第 2 行
+        for (i = 0; i < 70; i = i + 1)
+            type_char("z");
+        wait_byte(1, 1, "z");
+        key_ctrl("c");
+        wait_prompt(2);
+        for (i = 2; i < 70; i = i + 1)
+            check_byte(0, i, "z", "ctrl-c wrapped row 0");
+        check_byte(1, 0, "z", "ctrl-c wrapped row 1");
+        check_byte(1, 1, "z", "ctrl-c wrapped row 1 tail");
+        check_byte(1, 2, "^", "ctrl-c caret");
+        check_byte(1, 3, "C", "ctrl-c C");
+        check_byte(1, 4, 8'h00, "ctrl-c end");
+        check_cursor(2, 2, 2);
+
+        // ---------------- calc: 优先级、负号、括号、除零 ----------------
+        // + 和 * 是上档字符, 要按住 Shift 敲
+        type_line("calc 1");
+        type_shift_char("+");
+        type_char("2");
+        type_shift_char("*");
+        type_char("3");
+        key_enter;
+        wait_prompt(4);
+        expect_row(2, 12, "> calc 1+2*3");
+        expect_row(3, 1, "7");
+        expect_row(4, 2, "> ");
+
+        type_line("calc -7/2");
+        key_enter;
+        wait_prompt(6);
+        expect_row(5, 2, "-3");
+
+        type_line("calc ");
+        type_shift_char("(");
+        type_char("1");
+        type_shift_char("+");
+        type_char("2");
+        type_shift_char(")");
+        type_shift_char("*");
+        type_char("3");
+        key_enter;
+        wait_prompt(8);
+        expect_row(7, 1, "9");
+        expect_row(8, 2, "> ");
+
+        type_line("calc 10/0");
+        key_enter;
+        wait_prompt(10);
+        expect_row(9, 20, "calc: divide by zero");
+        expect_row(10, 2, "> ");
+
+        // ---------------- mem: 读键盘状态寄存器 ----------------
+        type_line("mem 0x300004 1");
+        key_enter;
+        wait_prompt(12);
+        expect_row(11, 18, "00300004: 00000000");
+        expect_row(12, 2, "> ");
+
+        // ---------------- time: 时:分:秒 ----------------
+        type_line("time");
+        key_enter;
+        wait_prompt(14);
+        expect_row(13, 6, "time: ");
+        for (i = 6; i <= 13; i = i + 1) begin
+            if ((i == 8) || (i == 11)) begin
+                if (scr(13, i) !== ":") begin
+                    errors = errors + 1;
+                    $display("MISMATCH time 格式: 第 %0d 列应为冒号, got %02h", i, scr(13, i));
+                end
+            end else if ((scr(13, i) < 8'h30) || (scr(13, i) > 8'h39)) begin
+                errors = errors + 1;
+                $display("MISMATCH time 格式: 第 %0d 列应为数字, got %02h", i, scr(13, i));
+            end
+        end
+
         // 键盘 FIFO 不能溢出, 否则说明软件处理按键比敲键慢, 有键被丢掉
         if (u_dut.u_bus.kbd_overflow !== 1'b0) begin
             errors = errors + 1;
@@ -562,7 +791,7 @@ module sys_top_tb;
 
     // 超时保护
     initial begin
-        #40_000_000;
+        #60_000_000;
         $display("TEST FAILED: timeout");
         $finish;
     end

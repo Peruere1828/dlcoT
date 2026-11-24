@@ -33,6 +33,13 @@
 #define K_LEFT      0x14          /* 左,     E0 6B */
 #define K_DEL       0x7F          /* Delete, E0 71 */
 
+/* Ctrl + 字母: 硬件送 0x80 | 字母序号, a 是 1, z 是 26 */
+#define K_CTRL_A    0x81          /* 行首 */
+#define K_CTRL_C    0x83          /* 取消当前行 */
+#define K_CTRL_E    0x85          /* 行尾 */
+#define K_CTRL_L    0x8C          /* 清屏 */
+#define K_CTRL_U    0x95          /* 清空当前行 */
+
 /* 字符屏幕参数 */
 #define VGA_MAXROW  30u           /* 屏幕显示 30 行 */
 #define VGA_MAXCOL  70u           /* 屏幕显示 70 列 */
@@ -51,6 +58,11 @@ void vga_init(void);
 void putch(char c);
 void puts(const char *s);
 void put_dec(int v);
+void put_hex(u32 v, u32 digits);
+
+/* 打印最近 8 条历史命令, 以及清空历史 */
+void history_dump(void);
+void history_clear(void);
 
 /* 读入一行命令, 返回字符数. 自己打印提示符 "> ", 支持左右方向键、
  * 上下方向键调历史、Home/End/Delete 和 Tab 补全.

@@ -50,8 +50,16 @@ hello | time | fib n | help
 | 命令 | 输出 |
 | :--- | :--- |
 | `hello` | `Hello World!` |
-| `time` | `time: <上电秒数> s` |
+| `time` | `time: HH:MM:SS` |
 | `fib n` | 第 n 项斐波那契数，n > 46 提示溢出 |
+| `calc <表达式>` | 整数四则运算，支持括号、负号、`0x` 十六进制 |
+| `mem <地址> [个数]` | 按字打印数据地址空间，默认 8 个字，最多 32 个 |
+| `echo <文字>` | 原样打印参数 |
+| `led <值>` | 写 `LED[14:0]`，`0x` 开头按十六进制，否则十进制 |
+| `sw` | 打印拨动开关的值，如 `sw: 0xa55a` |
+| `history` | 列出最近 8 条命令 |
+| `history clear` | 清空历史 |
+| `clear` | 清屏 |
 | `help` | 命令列表 |
 | 其它 | `Unknown Command` |
 
@@ -66,7 +74,13 @@ hello | time | fib n | help
 | Home / End | 光标跳到行首、行尾 |
 | Up / Down | 在最近 8 条命令历史里前翻、后翻，回到第 0 层恢复正在编辑的内容 |
 | Tab | 补全命令名，唯一候选补全后加一个空格，多个候选补到公共前缀 |
+| Ctrl+A / Ctrl+E | 光标跳到行首、行尾 |
+| Ctrl+U | 清空当前行 |
+| Ctrl+L | 清屏并把已经输入的内容重画在第一行 |
+| Ctrl+C | 放弃当前行，显示 `^C` 并换行 |
 | Enter | 执行命令 |
+
+按住 Ctrl 再按字母时，硬件送出 `0x80 | 字母序号`，例如 Ctrl+L 是 `0x8C`、Ctrl+C 是 `0x83`。这样 Ctrl 组合键不会和 Home、End、方向键的控制码撞车，软件按值分派即可。
 
 光标是硬件画的下划线，约 1.5Hz 闪烁。软件每次写完字符都会更新 `0x0021_0004`，硬件把寄存器里的物理行减去 `top_row` 得到屏幕行，所以滚屏之后光标仍然贴着提示符。
 
@@ -141,15 +155,15 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$PWD":/work -w /work iverilog:12 \
   bash -lc "iverilog -g2012 -Wall -s sys_mmio_tb -o /tmp/sim.out sys_top.v sys_mmio_tb.v && vvp /tmp/sim.out"
 
-# 全系统, 约 19ms 仿真时间, iverilog 约 15 秒
+# 全系统, 约 41ms 仿真时间, iverilog 约 60 秒
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$PWD":/work -w /work iverilog:12 \
   bash -lc "iverilog -g2012 -Wall -s sys_top_tb -o /tmp/sim.out sys_top.v rv32ip.v sys_top_tb.v && vvp /tmp/sim.out"
 ```
 
-`sys_mmio_tb` 覆盖显存字节读写、起始行、光标、数据存储器 `sw/lw/sb/lbu/sh`、栈顶地址、LED 与开关、PS/2 收字符、FIFO 读出队语义、回车与断码、Tab 与 `E0` 扩展键的字节映射、扩展键断码不出队、定时器递增。
+`sys_mmio_tb` 覆盖显存字节读写、起始行、光标、数据存储器 `sw/lw/sb/lbu/sh`、栈顶地址、LED 与开关、PS/2 收字符、FIFO 读出队语义、回车与断码、Tab 与 `E0` 扩展键的字节映射、Ctrl 组合键的 `0x80|序号` 编码、扩展键断码不出队、定时器递增。
 
-`sys_top_tb` 装入真实的 C 程序，依次输入 `hello`、`fib 10`、`xyz`、按住 Shift 的 `Hello`、退格、`time`、`fib 46`、`fib 47`，连续输入 75 个字符验证行尾换行并在第二行行内改一个字符，再用左右方向键在行内插入、用 Tab 补全、用上下方向键翻历史、用 Home 和 Delete 改行，最后敲回车触发滚屏。命令之间逐字符比对显存内容；光标另外检查两项：读回光标的物理行并换算成屏幕行，以及等 VGA 扫描到光标格时 `cursor_here` 必须为 1。仿真时间在 20ms 以内，Vivado 里要把默认的 1000ns 改掉。
+`sys_top_tb` 分两个阶段。第一阶段装入真实的 C 程序，依次输入 `hello`、`fib 10`、`xyz`、按住 Shift 的 `Hello`、退格、`time`、`fib 46`、`fib 47`，连续输入 75 个字符验证行尾换行并在第二行行内改一个字符，再用左右方向键在行内插入、用 Tab 补全、用上下方向键翻历史、用 Home 和 Delete 改行，最后敲回车触发滚屏。第二阶段复位后测 `echo`、`sw`、`led`、`history`、`history clear`、`clear` 命令和 Ctrl+A/E/L/C/U 五个组合键，其中 Ctrl+C 另用一条跨两行的输入行验证，`^C` 必须打在第 2 行行尾；再测 `calc` 的四则运算、括号与除零、`mem` 读寄存器、`time` 的时:分:秒格式。命令之间逐字符比对显存内容；光标另外检查两项：读回光标的物理行并换算成屏幕行，以及等 VGA 扫描到光标格时 `cursor_here` 必须为 1。仿真时间约 41ms，Vivado 里要把默认的 1000ns 改掉。
 
 ## 6. 综合后要检查的警告
 

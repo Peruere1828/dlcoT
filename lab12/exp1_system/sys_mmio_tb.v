@@ -13,6 +13,8 @@
 //      Home 0x01, End 0x05, Delete 0x7F; E0 F0 + 通码不产生字符
 //   7. 键盘 FIFO: 读数据不出队, 写弹出寄存器才出队
 //   8. 毫秒定时器递增
+//   9. Ctrl 组合键: Ctrl+A 0x81, Ctrl+C 0x83, Ctrl+L 0x8C, Ctrl+U 0x95,
+//      松开 Ctrl 后小写字母恢复正常
 // 定时器分频用参数 DIV=100 缩短仿真时间, 逻辑与上板的 100000 相同.
 
 module sys_mmio_tb;
@@ -361,6 +363,72 @@ module sys_mmio_tb;
         repeat (12) @(posedge clk);
         bus_read (32'h0030_0004, 3'b010, rd);
         check(rd, 32'h0000_0000, "kbd up release ignored");
+
+        // ---------------- 5.2 键盘: Ctrl 组合键 ----------------
+        // Ctrl 按住时字母送 0x80 | 字母序号: a=1 ... z=26
+        // 断码顺序固定为 通码, 断码前缀 F0, 通码, 再松开 Ctrl 的 F0 14
+
+        // Ctrl + A: 14 1C F0 1C F0 14 -> 0x81
+        ps2_send(8'h14);
+        ps2_send(8'h1C);
+        ps2_send(8'hF0);
+        ps2_send(8'h1C);
+        ps2_send(8'hF0);
+        ps2_send(8'h14);
+        repeat (24) @(posedge clk);
+        bus_read (32'h0030_0000, 3'b010, rd);
+        check(rd, 32'h0000_0081, "kbd ctrl a ascii");
+        bus_write(32'h0030_0008, 32'd0, 3'b010);
+
+        // Ctrl + C: 14 21 F0 21 F0 14 -> 0x83
+        ps2_send(8'h14);
+        ps2_send(8'h21);
+        ps2_send(8'hF0);
+        ps2_send(8'h21);
+        ps2_send(8'hF0);
+        ps2_send(8'h14);
+        repeat (24) @(posedge clk);
+        bus_read (32'h0030_0000, 3'b010, rd);
+        check(rd, 32'h0000_0083, "kbd ctrl c ascii");
+        bus_write(32'h0030_0008, 32'd0, 3'b010);
+
+        // Ctrl + L: 14 4B F0 4B F0 14 -> 0x8C
+        ps2_send(8'h14);
+        ps2_send(8'h4B);
+        ps2_send(8'hF0);
+        ps2_send(8'h4B);
+        ps2_send(8'hF0);
+        ps2_send(8'h14);
+        repeat (24) @(posedge clk);
+        bus_read (32'h0030_0000, 3'b010, rd);
+        check(rd, 32'h0000_008C, "kbd ctrl l ascii");
+        bus_write(32'h0030_0008, 32'd0, 3'b010);
+
+        // Ctrl + U: 14 3C F0 3C F0 14 -> 0x95
+        // 注意: u 的扫描码是 3C, 16 是数字 1
+        ps2_send(8'h14);
+        ps2_send(8'h3C);
+        ps2_send(8'hF0);
+        ps2_send(8'h3C);
+        ps2_send(8'hF0);
+        ps2_send(8'h14);
+        repeat (24) @(posedge clk);
+        bus_read (32'h0030_0000, 3'b010, rd);
+        check(rd, 32'h0000_0095, "kbd ctrl u ascii");
+        bus_write(32'h0030_0008, 32'd0, 3'b010);
+
+        // Ctrl 已经放开, 小写 l 正常送 0x6C: 4B F0 4B -> 0x6C
+        ps2_send(8'h4B);
+        ps2_send(8'hF0);
+        ps2_send(8'h4B);
+        repeat (8) @(posedge clk);
+        bus_read (32'h0030_0000, 3'b010, rd);
+        check(rd, 32'h0000_006C, "kbd plain l after ctrl");
+        bus_write(32'h0030_0008, 32'd0, 3'b010);
+
+        // 断码与组合键都不额外入队, FIFO 应为空
+        bus_read (32'h0030_0004, 3'b010, rd);
+        check(rd, 32'h0000_0000, "kbd ctrl combo no extra");
 
         // ---------------- 6. 定时器 ----------------
         bus_read (32'h0040_0000, 3'b010, ms1);

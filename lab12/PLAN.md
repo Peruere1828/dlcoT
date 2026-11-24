@@ -12,6 +12,8 @@
 | 软件 `exp1_system/sw/` | 已完成，`main.hex`、`main_d.hex` 已生成 |
 | 硬件光标 | 已完成，寄存器存物理行，硬件减 `top_row` 换成屏幕行再比较 |
 | Tab、方向键、Home/End/Delete | 已完成，硬件送控制字节，软件在 `readline` 里实现行编辑 |
+| Ctrl 组合键 | 已完成，硬件送 `0x80` 加字母序号，软件实现行首、行尾、清屏、取消行、清空行 |
+| 命令集 | hello / time / fib / calc / mem / echo / led / sw / history / clear / help，开关和 LED 通过终端可用 |
 | `sys_mmio_tb.v` 外设级仿真 | `TEST PASSED`，含 Tab 与 `E0` 扩展键的字节映射 |
 | `sys_top_tb.v` 全系统仿真 | `TEST PASSED`，覆盖 hello/time/fib/未知命令/退格/滚屏，以及左右键插入、Tab 补全、历史、滚屏后的光标 |
 | 上板验收 | 待进行 |
@@ -194,9 +196,10 @@ Vivado 里加入 `sys_top.v`、`rv32ip.v`、`main.hex`、`main_d.hex`、`vga_fon
 | Tab | `0x09` |
 | Up / Down / Right / Left | `0x11` / `0x12` / `0x13` / `0x14` |
 | Home / End / Delete | `0x01` / `0x05` / `0x7F` |
+| Ctrl + 字母 | `0x80` 加字母序号，Ctrl+A 是 `0x81`，Ctrl+L 是 `0x8C` |
 | 其它功能键 | 丢弃 |
 
-现版本 `sys_top.v` 的 `ps2_ascii` 在按键解析状态机里先判断 Tab 的扫描码 `8'h0D`，不能靠 `ascii_of` 的输出区分，因为 Enter 的 ASCII 也是 `0x0D`。方向键、Home、End、Delete 在 `E0` 扩展码分支里解析，释放码 `E0 F0 xx` 不产生字节。这些控制字节都小于 `0x20` 或等于 `0x7F`，不会和可打印字符冲突，软件按值分派即可。
+现版本 `sys_top.v` 的 `ps2_ascii` 在按键解析状态机里先判断 Tab 的扫描码 `8'h0D`，不能靠 `ascii_of` 的输出区分，因为 Enter 的 ASCII 也是 `0x0D`。方向键、Home、End、Delete 在 `E0` 扩展码分支里解析，释放码 `E0 F0 xx` 不产生字节。这些控制字节都小于 `0x20`、等于 `0x7F`，或者最高位为 1，不会和可打印字符冲突，软件按值分派即可。Ctrl 组合键单独占 `0x81` 到 `0x9A` 这一段，避免和 Home、End 的 `0x01`、`0x05` 撞车。
 
 CPU 侧接口：
 
@@ -289,6 +292,8 @@ sw/
 | `void put_dec(int v)` | 十进制输出，支持负数 |
 | `int getchar(void)` | 轮询键盘状态，有数据则读数据、写弹出寄存器、返回 ASCII；无数据返回 -1 |
 | `int readline(char *buf, u32 max)` | 打印提示符，读入一行并做行编辑，返回字符数 |
+| `void put_hex(u32 v, u32 digits)` | 十六进制输出，固定位数补 0 |
+| `void history_dump(void)` / `history_clear(void)` | 打印、清空命令历史 |
 | `u32 millis(void)` | 读毫秒定时器 |
 | `int streq(const char *a, const char *b)` | 字符串比较，代替不存在的 `strcmp` |
 
@@ -395,7 +400,8 @@ lab09 和 lab10 的 CPU 已在 25MHz 下上板复核，四个程序的结果与�
 - TB 按 PS/2 帧时序敲键，层次化读 `charmem` 逐行比对，覆盖：开机标题与提示符、`hello`、`fib 10`、`fib 46`、`fib 47`、`time`、未知命令、Shift 大小写、退格、行尾自动换行、滚屏。
 - 行编辑部分另加：左右方向键在行内插入、Tab 补全、上下键翻历史、Home/Delete/End。
 - 光标检查两项：把光标寄存器里的物理行减去 `top_row` 与当前行比较；等 VGA 扫描到光标格时，`cursor_here` 必须为 1。第二项能抓到"物理行直接和扫描行比较"的错误，滚屏后物理行是 30，屏幕上没有第 30 行，光标就画不出来。
-- 仿真时间约 19ms，Vivado 里不要用默认 1000ns。
+- 第二阶段复位后单独测命令与 Ctrl 组合键，复位不会清数据段，历史命令要先 `history clear` 才能算准行号。
+- 仿真时间约 41ms，Vivado 里不要用默认 1000ns。
 - 先在本机用 iverilog 做语法和行为预检：
 
 ```bash
@@ -420,9 +426,15 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 | Home / End / Delete | 光标跳到行首、行尾，Delete 删掉光标右边的字符 |
 | Tab | `fi` 补全为 `fib `，`he` 只补到 `hel` |
 | 上下方向键 | 取回上一条命令，再按下方向键恢复空行 |
+| Ctrl+A / Ctrl+E / Ctrl+U | 光标跳到行首、行尾，清空当前行 |
+| Ctrl+L / Ctrl+C | 清屏并保留输入；放弃当前行并显示 `^C`，跨两行的输入行也要打在对的行尾 |
+| `echo` / `sw` / `led` / `history` / `clear` | 参数原样打印；开关值正确；LED 随 `led` 改变；历史带序号；清屏后只剩提示符 |
 | 光标 | 紧跟最后一个字符，滚屏后仍贴着提示符，不跑行、不消失 |
 | 滚屏 | 输入超过 30 行后整体上移，最下面一行清空 |
 | `hello` | 输出 `Hello World!` |
+| `calc 1+2*3` / `calc (1+2)*3` / `calc -7/2` | 输出 `7` / `9` / `-3` |
+| `calc 10/0` | 输出 `calc: divide by zero` |
+| `mem 0x300004 1` | 输出 `00300004: 00000000` |
 | `time` | 输出递增的时间 |
 | `fib 10` | 输出 `55` |
 | 未知命令 | 输出 `Unknown Command` |
@@ -494,7 +506,10 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 | 提示符 | 只在按回车产生的逻辑行行首显示，自动换行的续行不打印 |
 | 光标 | 硬件绘制，寄存器存物理行，硬件减 `top_row` 换成屏幕行 |
 | 特殊键 | Tab 送 `0x09`，方向键送 `0x11` 到 `0x14`，Home/End/Delete 送 `0x01`、`0x05`、`0x7F` |
-| 行编辑 | C 软件 `readline`：行内插入删除、历史、Tab 补全 |
+| 行编辑 | C 软件 `readline`：行内插入删除、历史、Tab 补全、Ctrl 组合键 |
+| Ctrl 编码 | `0x80` 加字母序号，和 Home/End 等控制码分开 |
+| 终端命令 | hello、time、fib、calc、mem、echo、led、sw、history、clear、help |
+| 有符号除法 | `mul.c` 补 `__divsi3`、`__modsi3`，`calc` 的负数运算才能链接 |
 | 工具链 | `riscv32:12` 容器，`riscv64-linux-gnu-gcc` 加 RV32 参数 |
 
 还没有做、留待上板验收后再决定的项目：

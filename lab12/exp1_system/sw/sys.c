@@ -115,6 +115,27 @@ void puts(const char *s)
         putch(*s++);
 }
 
+/* 十六进制输出, 固定打印低 digits 位, 前面补 0 */
+void put_hex(u32 v, u32 digits)
+{
+    char buf[8];
+    u32 i;
+    u32 d;
+
+    if (digits > 8u)
+        digits = 8u;
+
+    for (i = 0; i < digits; i++) {
+        d = v & 0xFu;
+        buf[digits - 1u - i] = (d < 10u) ? (char)('0' + d)
+                                         : (char)('a' + d - 10u);
+        v >>= 4;
+    }
+
+    for (i = 0; i < digits; i++)
+        putch(buf[i]);
+}
+
 /* 十进制输出, 支持负数 */
 void put_dec(int v)
 {
@@ -325,6 +346,16 @@ static void ed_begin(void)
     ed_shown = 0;
 }
 
+/* Ctrl+L: 清屏后把已经输入的内容重画在第一行, 输入不丢 */
+static void ed_clear(const char *buf, u32 len, u32 pos)
+{
+    vga_init();
+    ed_phys  = 0;
+    ed_high  = ED_PROMPT;
+    ed_shown = 0;
+    ed_render(buf, len, pos);
+}
+
 static void hist_push(const char *buf, u32 len)
 {
     u32 slot;
@@ -364,6 +395,40 @@ static u32 hist_get(u32 back, char *dst)
     for (i = 0; i < hist_len[slot]; i++)
         dst[i] = hist[slot][i];
     return hist_len[slot];
+}
+
+/* 打印历史, 旧的在前, 带序号 */
+void history_dump(void)
+{
+    u32 i;
+    u32 k;
+    u32 slot;
+
+    if (hist_n == 0u) {
+        puts("history: empty\n");
+        return;
+    }
+
+    puts("history:\n");
+    for (i = hist_n; i > 0u; i--) {
+        slot = (hist_next + HIST_N - i) % HIST_N;
+        putch(' ');
+        putch(' ');
+        put_dec((int)(hist_n - i + 1u));
+        putch(' ');
+        for (k = 0; k < hist_len[slot]; k++)
+            putch(hist[slot][k]);
+        putch('\n');
+    }
+}
+
+/* 清空历史 */
+void history_clear(void)
+{
+    hist_n    = 0;
+    hist_next = 0;
+    hist_back = 0;
+    puts("history: cleared\n");
 }
 
 /* Tab 补全命令名. 只补第一个词, 多个候选补到公共前缀, 唯一候选补全后加空格 */
@@ -419,6 +484,7 @@ int readline(char *buf, u32 max)
     u32 pos = 0;
     u32 i;
     int c;
+    int cancelled = 0;
 
     if (max > LINE_MAX)
         max = LINE_MAX;
@@ -475,8 +541,31 @@ int readline(char *buf, u32 max)
                 pos = len;
                 ed_render(buf, len, pos);
             }
-        } else if (c == K_UP) {
-            if (hist_back < hist_n) {
+        } else if (c == K_CTRL_A) {
+            if (pos != 0u) {
+                pos = 0;
+                ed_render(buf, len, pos);
+            }
+        } else if (c == K_CTRL_E) {
+            if (pos != len) {
+                pos = len;
+                ed_render(buf, len, pos);
+            }
+        } else if (c == K_CTRL_U) {
+            len = 0;
+            pos = 0;
+            ed_render(buf, len, pos);
+        } else if (c == K_CTRL_L) {
+            ed_clear(buf, len, pos);
+        } else if (c == K_CTRL_C) {
+            /* 光标移到行尾, 打印 ^C 换行, 这一行作废; 光标留在新行行首 */
+            ed_place(ED_PROMPT + len);
+            puts("^C\n");
+            len = 0;
+            pos = 0;
+            cancelled = 1;
+            break;
+        } else if (c == K_UP) {            if (hist_back < hist_n) {
                 if (hist_back == 0u) {
                     hist_save_len = len;
                     for (i = 0; i < len; i++)
@@ -517,12 +606,14 @@ int readline(char *buf, u32 max)
         }
     }
 
-    hist_push(buf, len);
+    if (!cancelled) {
+        hist_push(buf, len);
 
-    /* 光标移到输入行末尾, 行尾正好落在下一行行首时不用再换行 */
-    ed_place(ED_PROMPT + len);
-    if (g_col != 0u)
-        newline();
+        /* 光标移到输入行末尾, 行尾正好落在下一行行首时不用再换行 */
+        ed_place(ED_PROMPT + len);
+        if (g_col != 0u)
+            newline();
+    }
 
     buf[len] = '\0';
     return (int)len;

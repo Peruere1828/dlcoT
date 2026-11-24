@@ -55,3 +55,26 @@ unsigned int __udivsi3(unsigned int a, unsigned int b)
     }
     return res;
 }
+
+/* 有符号除法与取余: C 语言的 / 和 % 对 int 会调用这两个函数,
+ * 实现方式是按符号转成无符号再调上面的 __udivsi3 / __umodsi3.
+ */
+int __divsi3(int a, int b)
+{
+    int neg = ((a < 0) ^ (b < 0)) ? 1 : 0;
+    unsigned int ua = (a < 0) ? (unsigned int)(-a) : (unsigned int)a;
+    unsigned int ub = (b < 0) ? (unsigned int)(-b) : (unsigned int)b;
+    unsigned int q  = __udivsi3(ua, ub);
+
+    return neg ? -(int)q : (int)q;
+}
+
+int __modsi3(int a, int b)
+{
+    int neg = (a < 0) ? 1 : 0;
+    unsigned int ua = (a < 0) ? (unsigned int)(-a) : (unsigned int)a;
+    unsigned int ub = (b < 0) ? (unsigned int)(-b) : (unsigned int)b;
+    unsigned int r  = __umodsi3(ua, ub);
+
+    return neg ? -(int)r : (int)r;
+}

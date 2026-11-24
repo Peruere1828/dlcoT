@@ -703,10 +703,12 @@ endmodule
 
 
 // ----------------------------------------------------------------------
-// 扫描码解析: 处理 F0 断码与 E0 扩展码, Shift 大小写, 输出 ASCII
+// 扫描码解析: 处理 F0 断码与 E0 扩展码, Shift 大小写, Ctrl 组合键, 输出 ASCII
 // Enter -> 0x0A, Backspace -> 0x08, Tab -> 0x09
 // 扩展键送出控制码: Up 0x11, Down 0x12, Right 0x13, Left 0x14,
 //                   Home 0x01, End 0x05, Delete 0x7F; 其它功能键丢弃
+// 按住 Ctrl 再按字母送出 0x80 | 字母序号, 例如 Ctrl+L 是 0x8C, Ctrl+C 是 0x83,
+// 这样 Ctrl 组合键和 Home/End 等控制码不会撞车.
 // push 为单周期脉冲, ch 同时有效
 // ----------------------------------------------------------------------
 module ps2_ascii(
@@ -783,11 +785,13 @@ module ps2_ascii(
     endfunction
 
     reg       shift_l, shift_r;
+    reg       ctrl_l, ctrl_r;
     reg [1:0] kstate;
     reg       nextdata_n;
     wire [7:0] rx;
 
     assign shift = shift_l | shift_r;
+    wire   ctrl  = ctrl_l | ctrl_r;
 
     ps2_keyboard u_kbd (
         .clk       (clk),
@@ -807,6 +811,8 @@ module ps2_ascii(
         ch         = 8'h00;
         shift_l    = 1'b0;
         shift_r    = 1'b0;
+        ctrl_l     = 1'b0;
+        ctrl_r     = 1'b0;
         kstate     = 2'd0;
         nextdata_n = 1'b1;
     end
@@ -818,6 +824,8 @@ module ps2_ascii(
             kstate  <= 2'd0;
             shift_l <= 1'b0;
             shift_r <= 1'b0;
+            ctrl_l  <= 1'b0;
+            ctrl_r  <= 1'b0;
         end else if (ready && nextdata_n) begin
             nextdata_n <= 1'b0;
             case (kstate)
@@ -827,12 +835,19 @@ module ps2_ascii(
                     8'hE0: kstate  <= 2'd2;   // 扩展码前缀
                     8'h12: shift_l <= 1'b1;
                     8'h59: shift_r <= 1'b1;
+                    8'h14: ctrl_l  <= 1'b1;
                     8'h0D: begin ch <= 8'h09; push <= 1'b1; end  // Tab
                     default: begin
                         if (rx_ascii == 8'h0A) begin
                             ch <= 8'h0A; push <= 1'b1;
                         end else if (rx_ascii == 8'h08) begin
                             ch <= 8'h08; push <= 1'b1;
+                        end else if (ctrl &&
+                                     (((rx_ascii >= 8'h41) && (rx_ascii <= 8'h5A)) ||
+                                      ((rx_ascii >= 8'h61) && (rx_ascii <= 8'h7A)))) begin
+                            // Ctrl + 字母: 0x80 加上字母序号, 88 个字母 1~26
+                            ch <= 8'h80 | rx_ascii[4:0];
+                            push <= 1'b1;
                         end else if (rx_ascii != 8'h00) begin
                             ch <= rx_ascii; push <= 1'b1;
                         end
@@ -840,9 +855,10 @@ module ps2_ascii(
                 endcase
             end
             2'd1: begin
-                // 通码的断码: 只处理 Shift 释放
+                // 通码的断码: 只处理 Shift、Ctrl 释放
                 if (rx == 8'h12)      shift_l <= 1'b0;
                 else if (rx == 8'h59) shift_r <= 1'b0;
+                else if (rx == 8'h14) ctrl_l  <= 1'b0;
                 kstate <= 2'd0;
             end
             2'd2: begin
@@ -851,6 +867,7 @@ module ps2_ascii(
                 else begin
                     case (rx)
                         8'h59: shift_r <= 1'b1;
+                        8'h14: ctrl_r  <= 1'b1;
                         8'h5A: begin ch <= 8'h0A; push <= 1'b1; end  // 小键盘 Enter
                         8'h75: begin ch <= 8'h11; push <= 1'b1; end  // Up
                         8'h72: begin ch <= 8'h12; push <= 1'b1; end  // Down
@@ -865,7 +882,8 @@ module ps2_ascii(
                 end
             end
             2'd3: begin
-                if (rx == 8'h59) shift_r <= 1'b0;
+                if (rx == 8'h59)      shift_r <= 1'b0;
+                else if (rx == 8'h14) ctrl_r  <= 1'b0;
                 kstate <= 2'd0;
             end
             endcase
