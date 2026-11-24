@@ -8,6 +8,7 @@
  *   echo <文字>   原样打印参数
  *   led <值>      写 LED, 支持 0x 前缀的十六进制
  *   sw            显示拨动开关的值
+ *   mines [种子]  扫雷小游戏, 不带种子就用毫秒计数
  *   history       列出最近 8 条命令
  *   clear         清屏
  *   help          显示命令列表
@@ -110,6 +111,22 @@ static u32 fib(u32 n)
 }
 
 /* 两位十进制, 不足两位补 0 */
+/* 命令表: Tab 补全查这张表, 加新命令时只改这里和 run_command 的分派 */
+static const char *const g_cmds[] = {
+    "hello", "help", "time", "fib", "calc", "mem",
+    "echo", "led", "sw", "mines", "history", "clear"
+};
+
+u32 cmd_count(void)
+{
+    return (u32)(sizeof(g_cmds) / sizeof(g_cmds[0]));
+}
+
+const char *cmd_name(u32 i)
+{
+    return (i < cmd_count()) ? g_cmds[i] : 0;
+}
+
 static void put_2d(u32 v)
 {
     putch((char)('0' + (v / 10u) % 10u));
@@ -376,7 +393,7 @@ static void run_command(char *s)
             putch('\n');
         }
     } else if (streq(name, "help")) {
-        puts("commands: hello,time,fib n,echo,led,sw,mem,calc,history,clear,help\n");
+        puts("cmds: hello time fib calc mem echo led sw mines history clear help\n");
         puts("keys: Left/Right move, Up/Down history, Tab complete\n");
     } else if (streq(name, "echo")) {
         puts(arg);
@@ -402,6 +419,13 @@ static void run_command(char *s)
             history_clear();
         else
             history_dump();
+    } else if (streq(name, "mines")) {
+        u32 sd = millis() | 1u;
+
+        if ((*arg != '\0') && !parse_num(arg, &sd))
+            puts("mines: bad seed\n");
+        else
+            mines_run(sd);
     } else if (streq(name, "clear")) {
         vga_init();
     } else {

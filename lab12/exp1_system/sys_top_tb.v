@@ -278,6 +278,23 @@ module sys_top_tb;
         end
     endtask
 
+    // 等扫雷画完第 n 帧: 游戏每画一帧就把帧号写到数码管寄存器
+    task wait_frame;
+        input integer n;
+        integer guard;
+        begin
+            guard = 0;
+            while ((u_dut.u_bus.dbg_r !== n) && (guard < 4_000_000)) begin
+                @(posedge clk100);
+                guard = guard + 1;
+            end
+            if (u_dut.u_bus.dbg_r !== n) begin
+                errors = errors + 1;
+                $display("MISMATCH: 等第 %0d 帧超时, dbg=%0d", n, u_dut.u_bus.dbg_r);
+            end
+        end
+    endtask
+
     // 等屏幕上某一格变成指定字符, 用来等软件把一行重画完
     task wait_byte;
         input integer row;
@@ -532,7 +549,7 @@ module sys_top_tb;
         wait_prompt(28);
 
         expect_row(25, 6, "> help");
-        expect_row(26, 66, "commands: hello,time,fib n,echo,led,sw,mem,calc,history,clear,help");
+        expect_row(26, 66, "cmds: hello time fib calc mem echo led sw mines history clear help");
         expect_row(27, 52, "keys: Left/Right move, Up/Down history, Tab complete");
         expect_row(28, 2, "> ");
 
@@ -779,6 +796,95 @@ module sys_top_tb;
             $display("MISMATCH: 键盘 FIFO 溢出, 有按键被丢弃");
         end
 
+        // ---------------- Tab 补全新加的命令 ----------------
+        type_line("ec");
+        key_tab;
+        wait_byte(14, 6, " ");
+        expect_row(14, 7, "> echo ");
+        type_line("hi");
+        key_enter;
+        wait_prompt(16);
+        expect_row(15, 2, "hi");
+        expect_row(16, 2, "> ");
+
+        type_line("le");
+        key_tab;
+        wait_byte(16, 5, " ");
+        expect_row(16, 6, "> led ");
+        type_line("0x0f");
+        key_enter;
+        wait_prompt(18);
+        expect_row(17, 11, "led: 0x000f");
+        expect_row(18, 2, "> ");
+
+        // ---------------- 扫雷: mi + Tab 补成 mines ----------------
+        type_line("mi");
+        key_tab;
+        wait_byte(18, 7, " ");
+        expect_row(18, 8, "> mines ");
+        type_char("7");                       // 固定种子, 和 mines_ref.py 对得上
+        key_enter;
+
+        // 进游戏先清屏再画棋盘, 等第一帧画完
+        wait_frame(1);
+
+        expect_row(0, 20, "MINES  9x9  10 mines");
+        expect_row(1, 46, "arrows move  ENTER open  F flag  R new  Q quit");
+        // 开局全部未翻开
+        check_byte(3, 3, "#", "mines all hidden");
+        check_byte(11, 19, "#", "mines all hidden corner");
+        expect_row(13, 22, "moves: 0   flags: 0/10");
+
+        // 回车翻开左上角: 周围 8 格没有雷, 洪泛出一片
+        key_enter;
+        wait_frame(2);
+        expect_row(13, 22, "moves: 1   flags: 0/10");
+        check_byte(3, 3, " ", "mines open corner is blank");
+        check_byte(3, 9, "1", "mines row0 col3 is 1");
+        check_byte(3, 11, "#", "mines row0 col4 stays hidden");
+        check_byte(6, 3, "1", "mines row3 col0 is 1");
+        check_byte(6, 17, "#", "mines row3 col7 stays hidden");
+
+        // 走到 (4,1) 插旗, 再按一次取消
+        key_down; key_down; key_down; key_down;
+        key_right;
+        wait_frame(7);
+        type_char("f");
+        wait_frame(8);
+        check_byte(7, 5, "F", "mines flag shown");
+        expect_row(13, 22, "moves: 2   flags: 1/10");
+        type_char("f");
+        wait_frame(9);
+        check_byte(7, 5, "#", "mines flag removed");
+        expect_row(13, 22, "moves: 3   flags: 0/10");
+
+        // (4,1) 是雷, 翻开就炸
+        key_enter;
+        wait_frame(10);
+        check_byte(7, 5, "*", "mines mine shown");
+        expect_row(14, 5, "BOOM!");
+        expect_row(13, 22, "moves: 4   flags: 0/10");
+
+        // R 重开: 回到全隐藏, 提示清掉
+        type_char("r");
+        wait_frame(11);
+        check_byte(3, 3, "#", "mines restart hidden");
+        check_byte(14, 0, " ", "mines restart clears message");
+        expect_row(13, 22, "moves: 0   flags: 0/10");
+
+        // Q 退出, 回到命令行
+        type_char("q");
+        i = 0;
+        while ((!(scr(0, 0) === 8'h3E && scr(0, 1) === 8'h20)) && (i < 3_000_000)) begin
+            @(posedge clk100);
+            i = i + 1;
+        end
+        if (!(scr(0, 0) === 8'h3E && scr(0, 1) === 8'h20)) begin
+            errors = errors + 1;
+            $display("MISMATCH: 退出扫雷后没有回到命令行");
+        end
+        check_cursor(0, 2, 0);
+
         // ---------------- 结果 ----------------
         if (errors == 0)
             $display("TEST PASSED");
@@ -791,7 +897,7 @@ module sys_top_tb;
 
     // 超时保护
     initial begin
-        #60_000_000;
+        #70_000_000;
         $display("TEST FAILED: timeout");
         $finish;
     end

@@ -51,6 +51,9 @@ all: ../$(EXEC).hex
 $(EXEC).elf: $(OBJS) sections.ld
 	$(RISCV_GCC) $(RISCV_GCC_OPTS) $(OPT) -e entry $(OBJS) -o $@
 	$(RISCV_OBJDUMP) $@ > $(EXEC).dump
+	@# CPU 复位后从 0 取指, entry 必须是 .text 里的第一个函数, 否则一开机就跑飞
+	@grep -q "^00000000 <entry>:" $(EXEC).dump || \
+	  (echo "ERROR: entry 不在地址 0, 检查 main.c 是否把其它函数定义在 entry 之前"; exit 1)
 
 $(EXEC).tmp: $(EXEC).elf
 	$(RISCV_OBJCOPY) $< $@

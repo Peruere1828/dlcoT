@@ -13,7 +13,8 @@
 | 硬件光标 | 已完成，寄存器存物理行，硬件减 `top_row` 换成屏幕行再比较 |
 | Tab、方向键、Home/End/Delete | 已完成，硬件送控制字节，软件在 `readline` 里实现行编辑 |
 | Ctrl 组合键 | 已完成，硬件送 `0x80` 加字母序号，软件实现行首、行尾、清屏、取消行、清空行 |
-| 命令集 | hello / time / fib / calc / mem / echo / led / sw / history / clear / help，开关和 LED 通过终端可用 |
+| 命令集 | hello / time / fib / calc / mem / echo / led / sw / mines / history / clear / help，开关和 LED 通过终端可用 |
+| 小游戏 | `mines` 扫雷，9×9 / 10 雷，字符棋盘，方向键 + 回车 + F/R/Q，种子可复现 |
 | `sys_mmio_tb.v` 外设级仿真 | `TEST PASSED`，含 Tab 与 `E0` 扩展键的字节映射 |
 | `sys_top_tb.v` 全系统仿真 | `TEST PASSED`，覆盖 hello/time/fib/未知命令/退格/滚屏，以及左右键插入、Tab 补全、历史、滚屏后的光标 |
 | 上板验收 | 待进行 |
@@ -401,7 +402,8 @@ lab09 和 lab10 的 CPU 已在 25MHz 下上板复核，四个程序的结果与�
 - 行编辑部分另加：左右方向键在行内插入、Tab 补全、上下键翻历史、Home/Delete/End。
 - 光标检查两项：把光标寄存器里的物理行减去 `top_row` 与当前行比较；等 VGA 扫描到光标格时，`cursor_here` 必须为 1。第二项能抓到"物理行直接和扫描行比较"的错误，滚屏后物理行是 30，屏幕上没有第 30 行，光标就画不出来。
 - 第二阶段复位后单独测命令与 Ctrl 组合键，复位不会清数据段，历史命令要先 `history clear` 才能算准行号。
-- 仿真时间约 41ms，Vivado 里不要用默认 1000ns。
+- 第三阶段用 `mi` + Tab 补全进入 `mines 7`，按固定种子逐格比对棋盘，覆盖翻开、洪泛、插旗、踩雷、重开、退出。
+- 仿真时间约 65ms，Vivado 里不要用默认 1000ns。
 - 先在本机用 iverilog 做语法和行为预检：
 
 ```bash
@@ -435,6 +437,9 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 | `calc 1+2*3` / `calc (1+2)*3` / `calc -7/2` | 输出 `7` / `9` / `-3` |
 | `calc 10/0` | 输出 `calc: divide by zero` |
 | `mem 0x300004 1` | 输出 `00300004: 00000000` |
+| `mines 7` 后按回车 | 左上角洪泛出一片，第 0 行第 3 列是 `1`，第 4 列仍是 `#` |
+| 扫雷踩雷 | (4,1) 是雷，翻开后显示 `*`，状态行显示 `BOOM!` |
+| 扫雷 `R` / `Q` | 重开回到全 `#`，退出回到 `> ` 提示符 |
 | `time` | 输出递增的时间 |
 | `fib 10` | 输出 `55` |
 | 未知命令 | 输出 `Unknown Command` |
@@ -508,7 +513,8 @@ docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp \
 | 特殊键 | Tab 送 `0x09`，方向键送 `0x11` 到 `0x14`，Home/End/Delete 送 `0x01`、`0x05`、`0x7F` |
 | 行编辑 | C 软件 `readline`：行内插入删除、历史、Tab 补全、Ctrl 组合键 |
 | Ctrl 编码 | `0x80` 加字母序号，和 Home/End 等控制码分开 |
-| 终端命令 | hello、time、fib、calc、mem、echo、led、sw、history、clear、help |
+| 终端命令 | hello、time、fib、calc、mem、echo、led、sw、mines、history、clear、help |
+| 扫雷 | 字符棋盘，LCG 种子，首翻 3×3 无雷，帧号写数码管供 testbench 同步 |
 | 有符号除法 | `mul.c` 补 `__divsi3`、`__modsi3`，`calc` 的负数运算才能链接 |
 | 工具链 | `riscv32:12` 容器，`riscv64-linux-gnu-gcc` 加 RV32 参数 |
 

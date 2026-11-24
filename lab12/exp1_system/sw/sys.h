@@ -49,12 +49,15 @@
 /* 命令行最大字符数, 屏上一行 70 列减去提示符 2 列后最多两行 */
 #define LINE_MAX    79u
 
-typedef unsigned int u32;
+typedef unsigned int  u32;
+typedef unsigned char u8;
 
 /* 所有 MMIO 访问必须经过 volatile, 否则 -O2 下轮询会被优化掉 */
 #define REG32(addr) (*(volatile unsigned int *)(addr))
 
 void vga_init(void);
+void vga_put(u32 row, u32 col, char ch);
+void vga_set_cursor(u32 row, u32 col);
 void putch(char c);
 void puts(const char *s);
 void put_dec(int v);
@@ -69,6 +72,13 @@ void history_clear(void);
  * buf 至少要有 LINE_MAX + 1 字节.
  */
 int  readline(char *buf, u32 max);
+
+/* 命令表, 定义在 main.c, Tab 补全查这张表 */
+u32         cmd_count(void);
+const char *cmd_name(u32 i);
+
+/* 扫雷小游戏 */
+void mines_run(u32 seed);
 
 int  getchar(void);
 u32  millis(void);

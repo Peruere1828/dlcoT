@@ -39,6 +39,26 @@ void vga_init(void)
     set_cursor();
 }
 
+/* 直接写显存某一格, 全屏程序用 */
+void vga_put(u32 row, u32 col, char ch)
+{
+    u32 phys;
+
+    if ((row >= VGA_MAXROW) || (col >= VGA_MAXCOL))
+        return;
+
+    phys = (g_top + row) & (VGA_ROWS - 1u);
+    CHAR_BASE[(phys << 7) + col] = (unsigned char)ch;
+}
+
+/* 终端光标和硬件光标一起放到 (row, col) */
+void vga_set_cursor(u32 row, u32 col)
+{
+    g_row = row;
+    g_col = col;
+    set_cursor();
+}
+
 /* 滚屏: 起始行加一, 清空新的最底行, 光标跟着文字上移一行 */
 static void scroll(void)
 {
@@ -200,7 +220,6 @@ int streq(const char *a, const char *b)
 #define ED_STRIDE    VGA_MAXCOL
 #define ED_PROMPT    2u
 #define HIST_N       8u
-#define NCMD         4u
 
 static u32  ed_phys;             /* 本轮输入行在显存里的物理起始行 */
 static u32  ed_high;             /* 已经写过的最远偏移, 用来擦掉行尾残留 */
@@ -213,8 +232,6 @@ static u32  hist_next;           /* 下一条写入的槽位 */
 static char hist_save[LINE_MAX + 1u];
 static u32  hist_save_len;
 static u32  hist_back;           /* 0 表示正在编辑新行, k 表示回看第 k 条 */
-
-static const char *const cmds[NCMD] = { "hello", "help", "time", "fib" };
 
 static u32 slen(const char *s)
 {
@@ -447,31 +464,40 @@ static u32 complete(char *buf, u32 len, u32 *pos)
         if (buf[i] == ' ')
             return len;
 
-    for (i = 0; i < NCMD; i++) {
-        if (!sprefix(cmds[i], buf, len))
+    /* 命令表在 main.c 里, 这里查表, 加减命令不用改两处 */
+    for (i = 0; i < cmd_count(); i++) {
+        const char *name = cmd_name(i);
+        u32 nl;
+
+        if (name == 0)
+            break;
+        if (!sprefix(name, buf, len))
             continue;
+        nl = slen(name);
         if (match == 0u) {
-            cand = cmds[i];
-            plen = slen(cand);
+            cand = name;
+            plen = nl;
         } else {
-            n = (plen < slen(cmds[i])) ? plen : slen(cmds[i]);
+            n = (plen < nl) ? plen : nl;
             plen = 0;
-            while (plen < n && cand[plen] == cmds[i][plen])
+            while (plen < n && cand[plen] == name[plen])
                 plen++;
         }
         match++;
     }
 
-    if (match == 0u || plen <= len)
+    if (match == 0u)
         return len;
 
-    for (i = len; i < plen; i++)
-        buf[i] = cand[i];
-    len  = plen;
-    *pos = plen;
+    if (plen > len) {                   /* 补到公共前缀 */
+        for (i = len; i < plen; i++)
+            buf[i] = cand[i];
+        len  = plen;
+        *pos = plen;
+    }
 
-    if (match == 1u) {                  /* 唯一候选, 顺手补一个空格 */
-        buf[len] = ' ';
+    if ((match == 1u) && (len == plen) && (len < LINE_MAX)) {
+        buf[len] = ' ';                 /* 唯一候选, 已经输完整也补一个空格 */
         len++;
         *pos = len;
     }
